@@ -1,0 +1,76 @@
+---
+name: react-best-practices.mdc
+description: Best practices for React component development and state management
+globs: **/*.{ts,tsx,js,jsx}
+---
+
+- Use functional components with hooks
+- Keep components small and focused
+- Utilize memoization for performance optimization
+- Implement proper prop type validation
+
+---
+name: typescript-best-practices.mdc
+description: TypeScript coding standards and type safety guidelines
+globs: **/*.{ts,tsx}
+---
+
+- Use strict null checks
+- Prefer interface over type when possible
+- Use type guards and assertions for runtime type checking
+- Implement proper type inference to reduce explicit type annotations
+
+---
+name: emotion-best-practices.mdc
+description: Best practices for using Emotion for styling in React
+globs: **/*.{ts,tsx,js,jsx}
+---
+
+- Use `styled` for component-specific styles
+- Utilize the `css` prop for dynamic styling
+- Implement a consistent naming convention for styled components
+- Use Emotion's theming capabilities for global style management
+
+---
+name: material-ui-best-practices.mdc
+description: Guidelines for using Material-UI components and theming
+globs: **/*.{ts,tsx,js,jsx}
+---
+
+- Use Material-UI's theme provider for consistent styling
+- Customize components using the `sx` prop for fine-grained control
+- Implement responsive design using Material-UI's breakpoints
+- Utilize Material-UI's icon library for consistent iconography
+
+---
+name: react-query-best-practices.mdc
+description: Best practices for data fetching and caching with React Query
+globs: **/*.{ts,tsx,js,jsx}
+---
+
+- Use `useQuery` for fetching data and `useMutation` for updates
+- Implement proper query keys for efficient caching and refetching
+- Utilize `queryClient` for manual cache management when needed
+- Set appropriate stale time and cache time for performance optimization
+
+---
+name: axios-best-practices.mdc
+description: Guidelines for using Axios for HTTP requests
+globs: **/*.{ts,tsx,js,jsx}
+---
+
+- Use interceptors for global request/response handling
+- Implement proper error handling and status code checking
+- Utilize Axios' cancel token for aborting requests when necessary
+- Set appropriate timeouts for requests to prevent hanging
+
+---
+name: vite-best-practices.mdc
+description: Best practices for using Vite as a development and build tool
+globs: **/*.{ts,tsx,js,jsx}
+---
+
+- Use Vite's plugin system for extending functionality
+- Implement proper environment variable management
+- Utilize Vite's hot module replacement for development efficiency
+- Optimize build configuration for production performance
