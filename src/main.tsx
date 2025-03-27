@@ -7,7 +7,18 @@ import CssBaseline from '@mui/material/CssBaseline'
 import App from './App.tsx'
 import './index.css'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 60, // 1 hour
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+      refetchOnWindowFocus: false,
+      retry: 1,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+    },
+  },
+})
 
 const theme = createTheme({
   palette: {

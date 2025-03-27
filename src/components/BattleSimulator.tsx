@@ -157,6 +157,17 @@ interface Move {
         type: 'paralysis' | 'sleep' | 'poison' | 'burn' | 'freeze';
         chance: number;
     };
+    comboMove?: {
+        name: string;
+        type: string;
+        power: number;
+        chance: number;
+    };
+    specialEffect?: {
+        type: 'heal' | 'boost' | 'weather' | 'terrain';
+        value: number;
+        chance: number;
+    };
 }
 
 // Add moves for each type
@@ -165,40 +176,55 @@ const MOVES: { [key: string]: Move[] } = {
         { name: 'Thunder Wave', type: 'electric', power: 0, statusEffect: { type: 'paralysis', chance: 1 } },
         { name: 'Thunder', type: 'electric', power: 110, statusEffect: { type: 'paralysis', chance: 0.3 } },
         { name: 'Thunder Shock', type: 'electric', power: 40, statusEffect: { type: 'paralysis', chance: 0.1 } },
+        { name: 'Thunderbolt', type: 'electric', power: 90, comboMove: { name: 'Thunder', type: 'electric', power: 110, chance: 0.3 } },
     ],
     fire: [
         { name: 'Fire Blast', type: 'fire', power: 110, statusEffect: { type: 'burn', chance: 0.3 } },
         { name: 'Will-O-Wisp', type: 'fire', power: 0, statusEffect: { type: 'burn', chance: 1 } },
         { name: 'Flamethrower', type: 'fire', power: 90, statusEffect: { type: 'burn', chance: 0.1 } },
+        { name: 'Fire Spin', type: 'fire', power: 35, specialEffect: { type: 'terrain', value: 0.5, chance: 0.5 } },
+    ],
+    water: [
+        { name: 'Hydro Pump', type: 'water', power: 110 },
+        { name: 'Water Gun', type: 'water', power: 40 },
+        { name: 'Bubble Beam', type: 'water', power: 65, statusEffect: { type: 'paralysis', chance: 0.1 } },
+        { name: 'Rain Dance', type: 'water', power: 0, specialEffect: { type: 'weather', value: 1.5, chance: 1 } },
+    ],
+    grass: [
+        { name: 'Solar Beam', type: 'grass', power: 120, specialEffect: { type: 'weather', value: 1.5, chance: 1 } },
+        { name: 'Vine Whip', type: 'grass', power: 45 },
+        { name: 'Sleep Powder', type: 'grass', power: 0, statusEffect: { type: 'sleep', chance: 0.75 } },
+        { name: 'Synthesis', type: 'grass', power: 0, specialEffect: { type: 'heal', value: 50, chance: 1 } },
     ],
     ice: [
         { name: 'Ice Beam', type: 'ice', power: 90, statusEffect: { type: 'freeze', chance: 0.1 } },
         { name: 'Blizzard', type: 'ice', power: 110, statusEffect: { type: 'freeze', chance: 0.1 } },
         { name: 'Ice Punch', type: 'ice', power: 75, statusEffect: { type: 'freeze', chance: 0.1 } },
+        { name: 'Hail', type: 'ice', power: 0, specialEffect: { type: 'weather', value: 1.5, chance: 1 } },
     ],
     poison: [
         { name: 'Toxic', type: 'poison', power: 0, statusEffect: { type: 'poison', chance: 1 } },
         { name: 'Sludge Bomb', type: 'poison', power: 90, statusEffect: { type: 'poison', chance: 0.3 } },
         { name: 'Poison Powder', type: 'poison', power: 0, statusEffect: { type: 'poison', chance: 0.75 } },
+        { name: 'Venom Drench', type: 'poison', power: 0, specialEffect: { type: 'terrain', value: 0.5, chance: 0.5 } },
     ],
     normal: [
         { name: 'Body Slam', type: 'normal', power: 85, statusEffect: { type: 'paralysis', chance: 0.3 } },
         { name: 'Hypnosis', type: 'normal', power: 0, statusEffect: { type: 'sleep', chance: 0.6 } },
         { name: 'Sing', type: 'normal', power: 0, statusEffect: { type: 'sleep', chance: 0.55 } },
-        { name: 'Thunder Wave', type: 'normal', power: 0, statusEffect: { type: 'paralysis', chance: 1 } },
-    ],
-    grass: [
-        { name: 'Sleep Powder', type: 'grass', power: 0, statusEffect: { type: 'sleep', chance: 0.75 } },
-        { name: 'Stun Spore', type: 'grass', power: 0, statusEffect: { type: 'paralysis', chance: 0.75 } },
-        { name: 'Poison Powder', type: 'grass', power: 0, statusEffect: { type: 'poison', chance: 0.75 } },
+        { name: 'Recover', type: 'normal', power: 0, specialEffect: { type: 'heal', value: 50, chance: 1 } },
     ],
     psychic: [
         { name: 'Hypnosis', type: 'psychic', power: 0, statusEffect: { type: 'sleep', chance: 0.6 } },
         { name: 'Confuse Ray', type: 'psychic', power: 0, statusEffect: { type: 'paralysis', chance: 0.5 } },
+        { name: 'Psychic', type: 'psychic', power: 90, specialEffect: { type: 'boost', value: 1.5, chance: 0.3 } },
+        { name: 'Calm Mind', type: 'psychic', power: 0, specialEffect: { type: 'boost', value: 1.5, chance: 1 } },
     ],
     ghost: [
         { name: 'Will-O-Wisp', type: 'ghost', power: 0, statusEffect: { type: 'burn', chance: 1 } },
         { name: 'Night Shade', type: 'ghost', power: 100, statusEffect: { type: 'paralysis', chance: 0.1 } },
+        { name: 'Shadow Ball', type: 'ghost', power: 80, specialEffect: { type: 'boost', value: 1.5, chance: 0.3 } },
+        { name: 'Curse', type: 'ghost', power: 0, specialEffect: { type: 'terrain', value: 0.5, chance: 1 } },
     ],
 };
 
@@ -254,6 +280,78 @@ interface BattleState {
     isTurnTimerActive: boolean;
     showMoveSelection: boolean;
 }
+
+// Add AttackEffect component definition
+const AttackEffect = ({ type, isAttacking }: { type: string; isAttacking: boolean }) => {
+    if (!isAttacking) return null;
+
+    const getTypeColor = (type: string) => {
+        switch (type) {
+            case 'fire': return '255, 100, 0';
+            case 'water': return '0, 150, 255';
+            case 'electric': return '255, 255, 0';
+            case 'grass': return '0, 255, 0';
+            case 'ice': return '0, 255, 255';
+            case 'fighting': return '255, 100, 0';
+            case 'poison': return '255, 0, 255';
+            case 'ground': return '139, 69, 19';
+            case 'flying': return '135, 206, 235';
+            case 'psychic': return '255, 192, 203';
+            case 'bug': return '154, 205, 50';
+            case 'rock': return '139, 69, 19';
+            case 'ghost': return '128, 0, 128';
+            case 'dragon': return '138, 43, 226';
+            case 'dark': return '47, 79, 79';
+            case 'steel': return '192, 192, 192';
+            case 'fairy': return '255, 182, 193';
+            default: return '255, 255, 255';
+        }
+    };
+
+    return (
+        <svg
+            width="100%"
+            height="100%"
+            viewBox="0 0 100 100"
+            style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+        >
+            <defs>
+                <linearGradient id={`${type}Gradient`} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style={{ stopColor: `rgba(${getTypeColor(type)}, 0.8)` }} />
+                    <stop offset="100%" style={{ stopColor: `rgba(${getTypeColor(type)}, 0)` }} />
+                </linearGradient>
+                <filter id={`${type}Blur`}>
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2" />
+                </filter>
+            </defs>
+            <g filter={`url(#${type}Blur)`}>
+                <path
+                    d="M 50 50 L 80 50"
+                    stroke={`url(#${type}Gradient)`}
+                    strokeWidth="4"
+                    className={`${type}-attack`}
+                />
+            </g>
+            <style>
+                {`
+                    .${type}-attack {
+                        animation: ${type}Attack 0.5s ease-out forwards;
+                    }
+                    @keyframes ${type}Attack {
+                        0% {
+                            stroke-dasharray: 0 100;
+                            opacity: 1;
+                        }
+                        100% {
+                            stroke-dasharray: 100 0;
+                            opacity: 0;
+                        }
+                    }
+                `}
+            </style>
+        </svg>
+    );
+};
 
 const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectiveness }) => {
     // Replace state with ref for battleLogIdCounter
@@ -570,39 +668,128 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
         const attacker = battleState.currentTurn === 1 ? battleState.team1Pokemon : battleState.team2Pokemon;
         const defender = battleState.currentTurn === 1 ? battleState.team2Pokemon : battleState.team1Pokemon;
-        const move = battleState.selectedMove; // Store selected move to avoid null checks
+        const move = battleState.selectedMove;
 
-        // Check if attacker is affected by status conditions
-        const attackerStatus = battleState.statusEffects[attacker.id];
-        if (attackerStatus) {
-            // Handle paralysis (25% chance to not attack)
-            if (attackerStatus.type === 'paralysis' && Math.random() < 0.25) {
+        // Check for status effects
+        const statusEffect = battleState.statusEffects[attacker.id];
+        if (statusEffect) {
+            if (statusEffect.type === 'sleep' && statusEffect.turns > 0) {
                 setBattleState(prev => ({
                     ...prev,
-                    battleLog: [addBattleLogEntry(`${attacker.name} is paralyzed and couldn't move!`, 'normal'), ...prev.battleLog],
-                    currentTurn: prev.currentTurn === 1 ? 2 : 1,
+                    battleLog: [addBattleLogEntry(`${attacker.name} is fast asleep!`, 'normal'), ...prev.battleLog],
+                    statusEffects: {
+                        ...prev.statusEffects,
+                        [attacker.id]: { ...statusEffect, turns: statusEffect.turns - 1 }
+                    },
+                    currentTurn: prev.currentTurn === 1 ? 2 : 1, // Switch turns when Pokémon is asleep
                     selectedMove: null
                 }));
                 return;
             }
-
-            // Handle sleep and freeze (cannot attack)
-            if (['sleep', 'freeze'].includes(attackerStatus.type)) {
+            if (statusEffect.type === 'paralysis' && Math.random() < 0.25) {
                 setBattleState(prev => ({
                     ...prev,
-                    battleLog: [addBattleLogEntry(`${attacker.name} is ${attackerStatus.type === 'sleep' ? 'sleeping' : 'frozen'} and couldn't move!`, 'normal'), ...prev.battleLog],
-                    currentTurn: prev.currentTurn === 1 ? 2 : 1,
+                    battleLog: [addBattleLogEntry(`${attacker.name} is paralyzed! It can't move!`, 'normal'), ...prev.battleLog],
+                    currentTurn: prev.currentTurn === 1 ? 2 : 1, // Switch turns when Pokémon is paralyzed
                     selectedMove: null
+                }));
+                return;
+            }
+            if (statusEffect.type === 'freeze' && Math.random() < 0.2) {
+                setBattleState(prev => ({
+                    ...prev,
+                    battleLog: [addBattleLogEntry(`${attacker.name} is frozen solid!`, 'normal'), ...prev.battleLog]
                 }));
                 return;
             }
         }
 
+        // Calculate damage with weather effects
+        let { damage, isCritical } = calculateDamage(attacker, defender, move);
+
+        // Apply weather effects
+        if (battleState.weather === 'sunny' && move.type === 'fire') {
+            damage = Math.floor(damage * 1.5);
+            setBattleState(prev => ({
+                ...prev,
+                battleLog: [addBattleLogEntry('The sunlight intensified the attack!', 'normal'), ...prev.battleLog]
+            }));
+        } else if (battleState.weather === 'rain' && move.type === 'water') {
+            damage = Math.floor(damage * 1.5);
+            setBattleState(prev => ({
+                ...prev,
+                battleLog: [addBattleLogEntry('The rain intensified the attack!', 'normal'), ...prev.battleLog]
+            }));
+        }
+
+        // Handle special effects
+        if (move.specialEffect && Math.random() < move.specialEffect.chance) {
+            switch (move.specialEffect.type) {
+                case 'heal':
+                    const healAmount = Math.floor(move.specialEffect.value);
+                    setBattleState(prev => ({
+                        ...prev,
+                        battleLog: [addBattleLogEntry(`${attacker.name} healed for ${healAmount} HP!`, 'normal'), ...prev.battleLog],
+                        team1Health: {
+                            ...prev.team1Health,
+                            [attacker.id]: Math.min(100, prev.team1Health[attacker.id] + healAmount)
+                        },
+                        team2Health: {
+                            ...prev.team2Health,
+                            [attacker.id]: Math.min(100, prev.team2Health[attacker.id] + healAmount)
+                        }
+                    }));
+                    break;
+                case 'weather':
+                    const weatherTypes: WeatherType[] = ['none', 'rain', 'sunny', 'sandstorm', 'hail'];
+                    const newWeather = weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
+                    changeWeather(newWeather);
+                    break;
+                case 'terrain':
+                    damage = Math.floor(damage * move.specialEffect.value);
+                    setBattleState(prev => ({
+                        ...prev,
+                        battleLog: [addBattleLogEntry('The terrain changed!', 'normal'), ...prev.battleLog]
+                    }));
+                    break;
+                case 'boost':
+                    const boostAmount = Math.floor(move.specialEffect.value * 100);
+                    setBattleState(prev => ({
+                        ...prev,
+                        battleLog: [addBattleLogEntry(`${attacker.name}'s attack rose!`, 'normal'), ...prev.battleLog],
+                        battleStats: {
+                            ...prev.battleStats,
+                            [prev.currentTurn === 1 ? 'team1' : 'team2']: {
+                                ...prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'],
+                                damageDealt: Math.floor(prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'].damageDealt * (move.specialEffect?.value ?? 1))
+                            }
+                        }
+                    }));
+                    break;
+            }
+        }
+
+        // Handle combo moves
+        if (move.comboMove && Math.random() < move.comboMove.chance) {
+            setBattleState(prev => ({
+                ...prev,
+                battleLog: [addBattleLogEntry(`${attacker.name} followed up with ${move.comboMove!.name}!`, 'normal'), ...prev.battleLog]
+            }));
+            const comboDamage = calculateDamage(attacker, defender, move.comboMove).damage;
+            damage += comboDamage;
+        }
+
         // Start attack animation
         setBattleState(prev => ({ ...prev, isAttackAnimating: true }));
 
-        // Calculate damage
-        const { damage, isCritical } = calculateDamage(attacker, defender, move);
+        // Play attack sound
+        if (soundEnabled) {
+            if (isCritical) {
+                playSound('critical');
+            } else {
+                playSound('attack');
+            }
+        }
 
         // Generate particles
         generateParticles(move.type, battleState.currentTurn === 1 ? 0 : 100, 50);
@@ -617,6 +804,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 : prev.team1Health[defender.id];
 
             const newHealth = Math.max(0, defenderHealth - damage);
+
+            // Play faint sound if Pokemon faints
+            if (newHealth === 0 && soundEnabled) {
+                playSound('faint');
+            }
 
             const updatedHealth = prev.currentTurn === 1
                 ? { ...prev.team2Health, [defender.id]: newHealth }
@@ -693,7 +885,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
             let message = `${attacker.name} used ${move.name}!`;
             if (isCritical) message += ' Critical hit!';
-            if (damage > 0) message += ` (-${damage} HP)`;
+            if (damage > 0) {
+                message += ` <span class="damage-text">(-${damage} HP)</span>`;
+            }
             if (statusMessage) message += statusMessage;
             if (newHealth === 0) message += `\n${defender.name} fainted!`;
 
@@ -716,6 +910,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         // Check for game over
         const { isOver, winner } = checkGameOver(battleState);
         if (isOver) {
+            // Play victory sound
+            if (soundEnabled) {
+                playSound('victory');
+            }
+
             setBattleState(prev => ({
                 ...prev,
                 gameOver: true,
@@ -730,6 +929,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             (pokemon.id === battleState.team2Pokemon?.id && battleState.currentTurn === 2);
 
         return (
+            <Box sx={{ position: 'relative', width: '100%' }}>
+                <AttackEffect
+                    type={battleState.selectedMove?.type || 'normal'}
+                    isAttacking={isAttacking}
+                />
             <Card
                 sx={{
                     position: 'relative',
@@ -742,33 +946,221 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             : battleState.gameOver && battleState.winner === (isAttacking ? 1 : 2)
                                 ? `${victory} 1s ease-in-out infinite`
                                 : 'none',
-                    border: isCurrentTurn
-                        ? '2px solid #4A90E2'
+                    background: 'linear-gradient(165deg, #1a1a2e 0%, #16213e 100%)',
+                    borderRadius: '16px',
+                    border: '3px solid',
+                    borderColor: isCurrentTurn
+                        ? 'rgba(74, 144, 226, 0.8)'
                         : health === 0
-                            ? '2px solid #FF0000'
-                            : '1px solid rgba(74, 144, 226, 0.2)',
+                            ? 'rgba(255, 0, 0, 0.8)'
+                            : 'rgba(255, 255, 255, 0.2)',
                     boxShadow: isCurrentTurn
-                        ? '0 0 20px rgba(74, 144, 226, 0.5)'
+                        ? '0 0 20px rgba(74, 144, 226, 0.5), inset 0 0 20px rgba(74, 144, 226, 0.3)'
                         : health === 0
-                            ? '0 0 20px rgba(255, 0, 0, 0.3)'
-                            : 'none',
+                            ? '0 0 20px rgba(255, 0, 0, 0.3), inset 0 0 20px rgba(255, 0, 0, 0.2)'
+                            : '0 8px 16px rgba(0, 0, 0, 0.4)',
                     transform: isCurrentTurn ? 'scale(1.02)' : 'scale(1)',
                     transition: 'all 0.3s ease-in-out',
+                    '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: `
+                            linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%),
+                            repeating-linear-gradient(
+                                45deg,
+                                rgba(255, 255, 255, 0.05) 0%,
+                                rgba(255, 255, 255, 0.05) 1px,
+                                transparent 1px,
+                                transparent 4px
+                            ),
+                            repeating-linear-gradient(
+                                -45deg,
+                                rgba(255, 255, 255, 0.05) 0%,
+                                rgba(255, 255, 255, 0.05) 1px,
+                                transparent 1px,
+                                transparent 4px
+                            )
+                        `,
+                        borderRadius: '13px',
+                        pointerEvents: 'none',
+                        zIndex: 1,
+                    },
+                    '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: `
+                            radial-gradient(
+                                circle at 20% 20%,
+                                rgba(255, 255, 255, 0.1) 0%,
+                                transparent 50%
+                            ),
+                            radial-gradient(
+                                circle at 80% 80%,
+                                rgba(255, 255, 255, 0.1) 0%,
+                                transparent 50%
+                            )
+                        `,
+                        borderRadius: '13px',
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                    }
                 }}
             >
-                <CardContent sx={{ p: 1 }}> {/* Reduced padding */}
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}> {/* Reduced gap */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}> {/* Reduced gap */}
-                            <Box sx={{ position: 'relative', flexShrink: 0, width: 60, height: 60 }}> {/* Reduced size */}
+                {/* Card Frame */}
+                <Box sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%)',
+                    pointerEvents: 'none',
+                    zIndex: 1,
+                }} />
+
+                <CardContent sx={{ p: 2, position: 'relative', zIndex: 3 }}>
+                    {/* Card Header */}
+                    <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        mb: 1.5,
+                        borderBottom: '2px solid rgba(255, 255, 255, 0.1)',
+                        pb: 1.5,
+                        position: 'relative',
+                        '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            bottom: -2,
+                            left: 0,
+                            right: 0,
+                            height: '2px',
+                            background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
+                        }
+                    }}>
+                        <Typography
+                            variant="h6"
+                            sx={{
+                                textTransform: 'capitalize',
+                                fontWeight: 'bold',
+                                fontSize: '1.2rem',
+                                color: '#fff',
+                                textShadow: '0 0 10px rgba(255, 255, 255, 0.5)',
+                                letterSpacing: '0.5px',
+                                position: 'relative',
+                                '&::before': {
+                                    content: '""',
+                                    position: 'absolute',
+                                    left: -8,
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    width: '4px',
+                                    height: '4px',
+                                    borderRadius: '50%',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                                    boxShadow: '0 0 8px rgba(255, 255, 255, 0.5)',
+                                }
+                            }}
+                        >
+                            {pokemon.name}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.8 }}>
+                            {pokemon.types.map(type => (
+                                <Box
+                                    key={type}
+                                    sx={{
+                                        width: '28px',
+                                        height: '28px',
+                                        borderRadius: '50%',
+                                        bgcolor: `${getTypeColor(type)}`,
+                                        border: '2px solid rgba(255, 255, 255, 0.8)',
+                                        boxShadow: `0 0 10px ${getTypeColor(type)}80`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.8rem',
+                                        color: '#fff',
+                                        fontWeight: 'bold',
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.8)',
+                                        position: 'relative',
+                                        '&::after': {
+                                            content: '""',
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            borderRadius: '50%',
+                                            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 50%)',
+                                            pointerEvents: 'none',
+                                        }
+                                    }}
+                                >
+                                    {type.charAt(0).toUpperCase()}
+                                </Box>
+                            ))}
+                        </Box>
+                    </Box>
+
+                    {/* Pokemon Image Container */}
+                    <Box sx={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '140px',
+                        mb: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+                        borderRadius: '12px',
+                        border: '2px solid rgba(255, 255, 255, 0.1)',
+                        overflow: 'hidden',
+                        '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: `
+                                radial-gradient(circle at center, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 70%),
+                                linear-gradient(45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+                                linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+                                linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%),
+                                linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%)
+                            `,
+                            backgroundSize: '20px 20px',
+                            opacity: 0.5,
+                            pointerEvents: 'none',
+                        }
+                    }}>
                                 <CardMedia
                                     component="img"
                                     image={pokemon.image}
                                     alt={pokemon.name}
                                     sx={{
-                                        width: '100%',
-                                        height: '100%',
+                                width: '85%',
+                                height: '85%',
                                         objectFit: 'contain',
-                                        filter: health === 0 ? 'grayscale(100%)' : 'none',
+                                filter: health === 0
+                                    ? 'grayscale(100%) brightness(0.7)'
+                                    : 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.3))',
+                                transform: 'scale(1.1)',
+                                transition: 'all 0.3s ease-in-out',
+                                animation: isCurrentTurn ? 'float 3s ease-in-out infinite' : 'none',
+                                '@keyframes float': {
+                                    '0%, 100%': { transform: 'translateY(0) scale(1.1)' },
+                                    '50%': { transform: 'translateY(-5px) scale(1.1)' }
+                                }
                                     }}
                                 />
                                 {battleState.statusEffects[pokemon.id] && (
@@ -778,71 +1170,148 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                     />
                                 )}
                             </Box>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}> {/* Reduced margin */}
-                                    <Typography variant="subtitle1" sx={{ textTransform: 'capitalize' }}> {/* Changed from h6 to subtitle1 */}
-                                        {pokemon.name}
-                                    </Typography>
-                                    {isCurrentTurn && !battleState.gameOver && (
-                                        <Chip
-                                            label="Current Turn"
-                                            size="small"
-                                            color="primary"
+
+                    {/* Stats Section */}
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                        background: 'linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                        borderRadius: '10px',
+                        p: 1.5,
+                        border: '2px solid rgba(255, 255, 255, 0.1)',
+                        position: 'relative',
+                        '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: `
+                                linear-gradient(45deg, transparent 48%, rgba(255, 255, 255, 0.1) 50%, transparent 52%),
+                                linear-gradient(-45deg, transparent 48%, rgba(255, 255, 255, 0.1) 50%, transparent 52%)
+                            `,
+                            backgroundSize: '20px 20px',
+                            opacity: 0.3,
+                            pointerEvents: 'none',
+                            borderRadius: '8px',
+                        }
+                    }}>
+                        {/* HP Bar */}
+                        <Box sx={{ width: '100%' }}>
+                            <Box sx={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                mb: 0.8,
+                                alignItems: 'center'
+                            }}>
+                                <Typography
                                             sx={{
-                                                backgroundColor: 'rgba(74, 144, 226, 0.2)',
-                                                color: '#4A90E2',
+                                        color: '#fff',
                                                 fontWeight: 'bold',
-                                                border: '1px solid #4A90E2',
-                                                height: '20px', // Reduced height
-                                            }}
-                                        />
-                                    )}
-                                </Box>
-                                <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5, flexWrap: 'wrap' }}> {/* Reduced margin */}
-                                    {pokemon.types.map(type => (
-                                        <Chip
-                                            key={type}
-                                            label={type}
-                                            size="small"
+                                        fontSize: '0.9rem',
+                                        textShadow: '0 0 8px rgba(255, 255, 255, 0.5)',
+                                        letterSpacing: '1px'
+                                    }}
+                                >
+                                    HP
+                                </Typography>
+                                <Typography
                                             sx={{
-                                                backgroundColor: getTypeColor(type),
-                                                color: 'white',
-                                                height: '20px', // Reduced height
-                                                '& .MuiChip-label': {
-                                                    px: 1, // Reduced padding
-                                                    fontSize: '0.75rem', // Smaller font
-                                                },
-                                            }}
-                                        />
-                                    ))}
+                                        color: '#fff',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.9rem',
+                                        textShadow: '0 0 8px rgba(255, 255, 255, 0.5)'
+                                    }}
+                                >
+                                    {Math.max(0, Math.min(100, health))}/100
+                                </Typography>
                                 </Box>
-                                <Box sx={{ width: '100%' }}>
-                                    <LinearProgress
-                                        variant="determinate"
-                                        value={Math.max(0, Math.min(100, health))}
+                            <Box sx={{
+                                position: 'relative',
+                                height: '12px',
+                                backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                overflow: 'hidden',
+                                boxShadow: 'inset 0 2px 4px rgba(0, 0, 0, 0.3)',
+                                '&::before': {
+                                    content: '""',
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
+                                    animation: 'shine 2s infinite',
+                                    '@keyframes shine': {
+                                        '0%': { transform: 'translateX(-100%)' },
+                                        '100%': { transform: 'translateX(100%)' }
+                                    }
+                                }
+                            }}>
+                                <Box
                                         sx={{
-                                            height: 6, // Reduced height
-                                            borderRadius: 3,
-                                            backgroundColor: 'grey.300',
-                                            '& .MuiLinearProgress-bar': {
-                                                backgroundColor: health > 50
-                                                    ? 'success.main'
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        height: '100%',
+                                        width: `${Math.max(0, Math.min(100, health))}%`,
+                                        background: health > 50
+                                            ? 'linear-gradient(90deg, #4CAF50 0%, #81C784 100%)'
                                                     : health > 20
-                                                        ? 'warning.main'
-                                                        : 'error.main',
-                                                transition: 'transform 0.5s ease-in-out',
-                                            },
-                                        }}
-                                    />
-                                    <Typography variant="caption" sx={{ mt: 0.5 }}> {/* Changed to caption */}
-                                        HP: {Math.max(0, Math.min(100, health))}%
-                                    </Typography>
+                                                ? 'linear-gradient(90deg, #FFA726 0%, #FFB74D 100%)'
+                                                : 'linear-gradient(90deg, #f44336 0%, #e57373 100%)',
+                                        transition: 'all 0.3s ease-in-out',
+                                        borderRadius: '5px',
+                                        boxShadow: health > 50
+                                            ? '0 0 10px rgba(76, 175, 80, 0.5)'
+                                            : health > 20
+                                                ? '0 0 10px rgba(255, 167, 38, 0.5)'
+                                                : '0 0 10px rgba(244, 67, 54, 0.5)',
+                                    }}
+                                />
                                 </Box>
                             </Box>
+
+                        {/* Current Turn Indicator */}
+                        {isCurrentTurn && !battleState.gameOver && (
+                            <Box sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                mt: 0.5
+                            }}>
+                                <Box
+                                    sx={{
+                                        px: 2,
+                                        py: 0.5,
+                                        borderRadius: '20px',
+                                        background: 'linear-gradient(90deg, rgba(74, 144, 226, 0.3) 0%, rgba(74, 144, 226, 0.1) 100%)',
+                                        border: '1px solid rgba(74, 144, 226, 0.5)',
+                                        boxShadow: '0 0 15px rgba(74, 144, 226, 0.3)',
+                                        color: '#fff',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 'bold',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '1px',
+                                        textShadow: '0 0 8px rgba(74, 144, 226, 0.8)',
+                                        animation: 'pulse 2s ease-in-out infinite',
+                                        '@keyframes pulse': {
+                                            '0%, 100%': { transform: 'scale(1)' },
+                                            '50%': { transform: 'scale(1.05)' }
+                                        }
+                                    }}
+                                >
+                                    Current Turn
                         </Box>
+                            </Box>
+                        )}
                     </Box>
                 </CardContent>
             </Card>
+            </Box>
         );
     };
 
@@ -1026,53 +1495,73 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         </Box>
     );
 
+    // Add new weather SVG components
+    const WeatherSVG = ({ type }: { type: WeatherType }) => {
+        switch (type) {
+            case 'rain':
+        return (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'linear-gradient(180deg, rgba(100, 149, 237, 0.2) 0%, rgba(100, 149, 237, 0.1) 100%)',
+                        backdropFilter: 'blur(2px)',
+                        borderRadius: 'inherit'
+                    }} />
+                );
+            case 'sunny':
+                return (
+                    <Box sx={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                        background: 'linear-gradient(180deg, rgba(255, 200, 50, 0.2) 0%, rgba(255, 150, 50, 0.1) 100%)',
+                        backdropFilter: 'blur(2px)',
+                        borderRadius: 'inherit'
+                    }} />
+                );
+            case 'sandstorm':
+                return (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'linear-gradient(180deg, rgba(210, 180, 140, 0.2) 0%, rgba(210, 180, 140, 0.1) 100%)',
+                        backdropFilter: 'blur(2px)',
+                        borderRadius: 'inherit'
+                    }} />
+                );
+            case 'hail':
+                return (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'linear-gradient(180deg, rgba(200, 230, 255, 0.2) 0%, rgba(200, 230, 255, 0.1) 100%)',
+                        backdropFilter: 'blur(2px)',
+                        borderRadius: 'inherit'
+                    }} />
+                );
+            default:
+                return null;
+        }
+    };
+
     // Update WeatherEffect component
     const WeatherEffect = () => {
         if (battleState.weather === 'none') return null;
 
         return (
             <WeatherOverlay>
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: battleState.weather === 'rain'
-                            ? 'linear-gradient(180deg, rgba(100, 149, 237, 0.3) 0%, rgba(100, 149, 237, 0.4) 100%)'
-                            : battleState.weather === 'sunny'
-                            ? 'linear-gradient(180deg, rgba(255, 200, 50, 0.3) 0%, rgba(255, 150, 50, 0.4) 100%)'
-                            : battleState.weather === 'sandstorm'
-                            ? 'linear-gradient(90deg, rgba(210, 180, 140, 0.3), rgba(210, 180, 140, 0.4))'
-                            : 'linear-gradient(180deg, rgba(200, 230, 255, 0.3) 0%, rgba(200, 230, 255, 0.4) 100%)',
-                        '&::before': {
-                            content: '""',
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            background: battleState.weather === 'rain'
-                                ? 'repeating-linear-gradient(transparent, transparent 10%, rgba(255, 255, 255, 0.2) 10%, rgba(255, 255, 255, 0.2) 20%)'
-                                : battleState.weather === 'sandstorm'
-                                ? 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(210, 180, 140, 0.2) 10px, rgba(210, 180, 140, 0.2) 20px)'
-                                : battleState.weather === 'hail'
-                                ? 'radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.3) 0%, transparent 0.5%) 0 0/12px 12px'
-                                : 'none',
-                            animation: battleState.weather === 'rain'
-                                ? 'rain 1s linear infinite'
-                                : battleState.weather === 'sandstorm'
-                                ? 'sandstorm 20s linear infinite'
-                                : battleState.weather === 'sunny'
-                                ? 'sunny 3s ease-in-out infinite'
-                                : 'snowfall 3s linear infinite',
-                            opacity: 0.6,
-                        },
-                        backdropFilter: 'blur(2px)',
-                        zIndex: 1,
-                    }}
-                />
+                <WeatherSVG type={battleState.weather} />
             </WeatherOverlay>
         );
     };
@@ -1137,34 +1626,48 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             <Box
                 sx={{
                     position: 'absolute',
-                    top: -6,
-                    right: -6,
-                    width: '24px',
-                    height: '24px',
-                    backgroundColor: statusColors[type as keyof typeof statusColors],
+                    top: '10px',
+                    right: '10px',
+                    width: '32px',
+                    height: '32px',
+                    backgroundColor: `${statusColors[type as keyof typeof statusColors]}CC`,
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '14px',
+                    fontSize: '18px',
                     color: 'white',
                     fontWeight: 'bold',
-                    animation: `${statusEffect} 1s ease-in-out infinite`,
-                    border: '2px solid white',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                    zIndex: 2,
-                    '&:hover::after': {
+                    animation: `${statusEffect} 2s ease-in-out infinite`,
+                    border: '2px solid rgba(255, 255, 255, 0.8)',
+                    boxShadow: `0 0 10px ${statusColors[type as keyof typeof statusColors]}`,
+                    zIndex: 20,
+                    backdropFilter: 'blur(4px)',
+                    cursor: 'pointer',
+                    '&::after': {
                         content: `"${type} (${turns} turns)"`,
                         position: 'absolute',
-                        top: '-24px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        top: '50%',
+                        right: '120%',
+                        transform: 'translateY(-50%)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.9)',
                         color: 'white',
-                        padding: '2px 6px',
+                        padding: '4px 8px',
                         borderRadius: '4px',
                         fontSize: '12px',
                         whiteSpace: 'nowrap',
+                        zIndex: 100,
+                        opacity: 0,
+                        visibility: 'hidden',
+                        transition: 'all 0.2s ease-in-out',
+                        pointerEvents: 'none',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                    },
+                    '&:hover::after': {
+                        opacity: 1,
+                        visibility: 'visible',
+                        transform: 'translateY(-50%) translateX(-2px)',
                     }
                 }}
             >
@@ -1455,6 +1958,94 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         setIsBattleDialogOpen(true);
     };
 
+    const BattleLog = ({ logs }: { logs: BattleState['battleLog'] }) => (
+        <Box sx={{
+            height: '200px',
+            overflowY: 'auto',
+            bgcolor: 'rgba(0, 0, 0, 0.85)',
+            borderRadius: 2,
+            p: 2,
+            fontFamily: '"Press Start 2P", monospace',
+            fontSize: '0.8rem',
+            lineHeight: 1.8,
+            border: '2px solid #4A90E2',
+            boxShadow: '0 0 20px rgba(74, 144, 226, 0.3)',
+            '& .damage-text': {
+                display: 'inline-block',
+                color: '#FF4444',
+                fontWeight: 'bold',
+                fontSize: '1.1em',
+                textShadow: '0 0 8px #FF4444',
+                background: 'linear-gradient(45deg, #FF4444, #FF0000)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                animation: 'damagePulse 1s ease-in-out infinite',
+                '@keyframes damagePulse': {
+                    '0%': { transform: 'scale(1)' },
+                    '50%': { transform: 'scale(1.1)' },
+                    '100%': { transform: 'scale(1)' }
+                }
+            },
+            '&::-webkit-scrollbar': {
+                width: '8px',
+            },
+            '&::-webkit-scrollbar-track': {
+                background: 'rgba(0, 0, 0, 0.3)',
+                borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+                background: '#4A90E2',
+                borderRadius: '4px',
+                '&:hover': {
+                    background: '#357ABD',
+                },
+            },
+        }}>
+            {logs.map((log) => (
+                <Box
+                    key={log.id}
+                    sx={{
+                        mb: 1.5,
+                        color: log.type === 'critical' ? '#FF4444' :
+                               log.type === 'death' ? '#FF0000' :
+                               log.type === 'victory' ? '#00FF00' : '#FFFFFF',
+                        textShadow: log.type === 'critical' ? '0 0 8px #FF4444' :
+                                   log.type === 'death' ? '0 0 8px #FF0000' :
+                                   log.type === 'victory' ? '0 0 8px #00FF00' : '0 0 4px rgba(255, 255, 255, 0.5)',
+                        opacity: 0.9,
+                        transform: 'translateY(0)',
+                        transition: 'all 0.3s ease-out',
+                        '&:hover': {
+                            opacity: 1,
+                            transform: 'translateX(4px)',
+                            textShadow: log.type === 'critical' ? '0 0 12px #FF4444' :
+                                       log.type === 'death' ? '0 0 12px #FF0000' :
+                                       log.type === 'victory' ? '0 0 12px #00FF00' : '0 0 8px rgba(255, 255, 255, 0.8)',
+                        },
+                        position: 'relative',
+                        '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            left: -8,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: '4px',
+                            height: '4px',
+                            borderRadius: '50%',
+                            backgroundColor: log.type === 'critical' ? '#FF4444' :
+                                          log.type === 'death' ? '#FF0000' :
+                                          log.type === 'victory' ? '#00FF00' : '#4A90E2',
+                            boxShadow: log.type === 'critical' ? '0 0 8px #FF4444' :
+                                      log.type === 'death' ? '0 0 8px #FF0000' :
+                                      log.type === 'victory' ? '0 0 8px #00FF00' : '0 0 4px #4A90E2',
+                        },
+                    }}
+                    dangerouslySetInnerHTML={{ __html: log.message }}
+                />
+            ))}
+        </Box>
+    );
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -1688,15 +2279,35 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                         flexDirection: 'column',
                         gap: 2,
                         flex: 1,
-                        overflow: 'hidden' // Prevent double scrollbars
+                        overflow: 'hidden',
+                        height: '100%'
                     }}
                 >
-                    {/* Battle Stats */}
+                    {/* Battle Stats Panel - Make it collapsible on small screens */}
+                    <Box sx={{
+                        display: { xs: 'none', sm: 'block' }
+                    }}>
                     <BattleStats stats={battleState.battleStats} />
+                    </Box>
 
+                    {/* Controls Container - Stack horizontally on larger screens, vertically on small screens */}
+                    <Stack
+                        direction={{ xs: 'column', sm: 'row' }}
+                        spacing={2}
+                        alignItems="center"
+                        sx={{
+                            flexWrap: 'wrap',
+                            '& > *': { minWidth: { xs: '100%', sm: 'auto' } }
+                        }}
+                    >
                     {/* Speed Control */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Typography variant="body2">Battle Speed:</Typography>
+                        <Box sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            width: { xs: '100%', sm: 'auto' }
+                        }}>
+                            <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>Speed: {battleState.battleSpeed}x</Typography>
                         <Slider
                             value={battleState.battleSpeed}
                             onChange={(_: unknown, value: number) => setBattleState(prev => ({
@@ -1706,14 +2317,18 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             min={0.5}
                             max={2}
                             step={0.1}
-                            sx={{ width: 200 }}
+                                sx={{ width: { xs: '100%', sm: 150 } }}
                         />
-                        <Typography variant="body2">{battleState.battleSpeed}x</Typography>
                     </Box>
 
                     {/* Turn Timer */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Typography variant="body2">Turn Timer: {battleState.turnTimer}s</Typography>
+                        <Box sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            width: { xs: '100%', sm: 'auto' }
+                        }}>
+                            <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>Timer: {battleState.turnTimer}s</Typography>
                         <Button
                             variant="outlined"
                             size="small"
@@ -1722,37 +2337,33 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                 isTurnTimerActive: !prev.isTurnTimerActive
                             }))}
                         >
-                            {battleState.isTurnTimerActive ? 'Pause Timer' : 'Start Timer'}
+                                {battleState.isTurnTimerActive ? 'Pause' : 'Start'}
                         </Button>
                     </Box>
+                    </Stack>
 
                     {battleState.showScreenFlash && <ScreenFlashOverlay />}
 
+                    {/* Battle Arena and Log Container */}
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', md: 'row' },
+                        gap: 2,
+                        flex: 1,
+                        minHeight: 0 // Important for proper flex behavior
+                    }}>
                     {/* Battle Arena */}
                     <Box sx={{
                         position: 'relative',
-                        flex: 1,
-                        minHeight: 300,
-                        maxHeight: 400,
+                        flex: { xs: '0 0 auto', md: '1 1 60%' },
+                        height: { xs: '300px', sm: '350px', md: 'auto' },
+                        minHeight: { xs: '300px', sm: '350px' },
+                        maxHeight: { xs: '350px', sm: '400px', md: 'none' },
                         display: 'flex',
                         flexDirection: 'column',
                         overflow: 'hidden',
                         borderRadius: 2,
-                        bgcolor: 'background.paper',
                         p: 2,
-                        background: `
-                            linear-gradient(
-                                45deg,
-                                rgba(26, 26, 46, 0.95) 25%,
-                                rgba(22, 33, 62, 0.95) 25%,
-                                rgba(22, 33, 62, 0.95) 50%,
-                                rgba(26, 26, 46, 0.95) 50%,
-                                rgba(26, 26, 46, 0.95) 75%,
-                                rgba(22, 33, 62, 0.95) 75%,
-                                rgba(22, 33, 62, 0.95)
-                            )
-                        `,
-                        backgroundSize: '40px 40px',
                         '&::before': {
                             content: '""',
                             position: 'absolute',
@@ -1760,12 +2371,71 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: 'linear-gradient(180deg, rgba(74, 144, 226, 0.1) 0%, rgba(155, 89, 182, 0.1) 100%)',
-                            pointerEvents: 'none',
+                        background: `
+                            linear-gradient(
+                                45deg,
+                                    rgba(22, 28, 45, 0.95) 0%,
+                                    rgba(26, 32, 53, 0.95) 50%,
+                                    rgba(22, 28, 45, 0.95) 100%
+                                ),
+                                repeating-linear-gradient(
+                                    45deg,
+                                    rgba(74, 144, 226, 0.1) 0%,
+                                    rgba(74, 144, 226, 0.1) 2px,
+                                    transparent 2px,
+                                    transparent 8px
+                                ),
+                                repeating-linear-gradient(
+                                    -45deg,
+                                    rgba(74, 144, 226, 0.1) 0%,
+                                    rgba(74, 144, 226, 0.1) 2px,
+                                    transparent 2px,
+                                    transparent 8px
+                                )
+                            `,
+                            opacity: 0.9,
+                            zIndex: 1,
                         },
+                        '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: `
+                                radial-gradient(
+                                    circle at center,
+                                    rgba(74, 144, 226, 0.15) 0%,
+                                    transparent 70%
+                                ),
+                                linear-gradient(
+                                    0deg,
+                                    rgba(22, 28, 45, 0.8) 0%,
+                                    transparent 50%,
+                                    rgba(22, 28, 45, 0.8) 100%
+                                )
+                            `,
+                            zIndex: 2,
+                            pointerEvents: 'none',
+                            animation: 'pulseBackground 4s ease-in-out infinite',
+                        },
+                        '@keyframes pulseBackground': {
+                            '0%, 100%': {
+                                opacity: 0.8,
+                            },
+                            '50%': {
+                                opacity: 1,
+                            },
+                        },
+                        '& .MuiGrid-container': {
+                            position: 'relative',
+                            zIndex: 3,
+                        }
                     }}>
                         <WeatherEffect />
                         <WeatherControls />
+                        {/* Pokemon Cards Grid */}
                         <Grid container spacing={1} alignItems="center" justifyContent="space-between" sx={{
                             position: 'relative',
                             zIndex: 2,
@@ -1773,7 +2443,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             px: 1,
                             '& .MuiPaper-root': {
                                 background: 'rgba(22, 33, 62, 0.85)',
-                                border: '5px solid rgba(74, 144, 226, 0.2)',
+                                border: '2px solid rgba(74, 144, 226, 0.2)',
                                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
                             }
                         }}>
@@ -1868,25 +2538,46 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     {/* Battle Log */}
                     <Paper
                         sx={{
-                            height: 400,
+                                flex: { xs: '1 1 auto', md: '1 1 40%' },
+                                minHeight: { xs: '200px', md: '100%' },
+                                maxHeight: { xs: '300px', md: 'none' },
                             overflow: 'auto',
                             bgcolor: 'background.paper',
-                            border: '1px solid',
-                            borderColor: 'divider',
+                                border: '2px solid',
+                                borderColor: 'primary.main',
                             borderRadius: 2,
                             p: 2,
                             scrollBehavior: 'smooth',
                             background: 'linear-gradient(180deg, rgba(22, 33, 62, 0.95) 0%, rgba(26, 26, 46, 0.95) 100%)',
                             backdropFilter: 'blur(10px)',
-                        }}
-                    >
+                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                                position: 'relative',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                '&::-webkit-scrollbar': {
+                                    width: '8px',
+                                },
+                                '&::-webkit-scrollbar-track': {
+                                    background: 'rgba(0, 0, 0, 0.1)',
+                                    borderRadius: '4px',
+                                },
+                                '&::-webkit-scrollbar-thumb': {
+                                    background: 'rgba(74, 144, 226, 0.5)',
+                                    borderRadius: '4px',
+                                    '&:hover': {
+                                        background: 'rgba(74, 144, 226, 0.7)',
+                                    },
+                                },
+                            }}
+                        >
+                            {/* Battle Log Header */}
                         <Typography
                             variant="h6"
-                            gutterBottom
                             sx={{
-                                borderBottom: 1,
-                                borderColor: 'divider',
+                                    borderBottom: 2,
+                                    borderColor: 'primary.main',
                                 pb: 1,
+                                    mb: 2,
                                 position: 'sticky',
                                 top: 0,
                                 bgcolor: 'background.paper',
@@ -1896,116 +2587,43 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                 gap: 1,
                                 color: 'primary.light',
                                 textShadow: '0 0 10px rgba(74, 144, 226, 0.5)',
+                                    background: 'linear-gradient(90deg, rgba(22, 33, 62, 0.98) 0%, rgba(26, 26, 46, 0.98) 100%)',
+                                    px: 2,
+                                    mx: -2,
+                                    fontSize: { xs: '1rem', sm: '1.25rem' }
                             }}
                         >
                             📜 Battle Log
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {battleState.battleLog.slice().reverse().map((entry) => {
-                                // Determine icon based on message content and type
-                                let icon = '⚔️';
-                                if (entry.message.includes('used')) icon = '💥';
-                                if (entry.message.includes('Critical hit')) icon = '⚡';
-                                if (entry.message.includes('fainted')) icon = '💀';
-                                if (entry.message.includes('wins')) icon = '🏆';
-                                if (entry.message.includes('paralyzed')) icon = '⚡';
-                                if (entry.message.includes('sleeping')) icon = '💤';
-                                if (entry.message.includes('frozen')) icon = '❄️';
-                                if (entry.message.includes('burn')) icon = '🔥';
-                                if (entry.message.includes('poison')) icon = '☠️';
-                                if (entry.message.includes('weather')) icon = '🌤️';
-                                if (entry.message.includes('Turn timer')) icon = '⏰';
 
-                                // Determine text color and effects based on type
-                                const textColor = entry.type === 'critical' ? '#FFD700' :
-                                               entry.type === 'death' ? '#FF4444' :
-                                               entry.type === 'victory' ? '#00FF00' : '#FFFFFF';
-
-                                const textShadow = entry.type === 'critical' ? '0 0 10px rgba(255, 215, 0, 0.5)' :
-                                                  entry.type === 'death' ? '0 0 10px rgba(255, 68, 68, 0.5)' :
-                                                  entry.type === 'victory' ? '0 0 10px rgba(0, 255, 0, 0.5)' : 'none';
-
-                                return (
-                                    <Box
-                                        key={entry.id}
-                                        sx={{
+                            {/* Battle Log Content */}
+                            <Box sx={{
                                             display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1,
-                                            p: 1.5,
-                                            borderRadius: 1,
-                                            background: 'rgba(255, 255, 255, 0.05)',
-                                            borderLeft: 3,
-                                            borderColor: entry.type === 'critical' ? '#FFD700' :
-                                                        entry.type === 'death' ? '#FF4444' :
-                                                        entry.type === 'victory' ? '#00FF00' : '#4A90E2',
-                                            animation: 'fadeIn 0.3s ease-in-out',
-                                            transition: 'all 0.3s ease-in-out',
-                                            '&:hover': {
-                                                background: 'rgba(255, 255, 255, 0.1)',
-                                                transform: 'translateX(5px)',
-                                            },
-                                            '@keyframes fadeIn': {
-                                                '0%': {
-                                                    opacity: 0,
-                                                    transform: 'translateY(10px)',
-                                                    filter: 'blur(5px)'
-                                                },
-                                                '100%': {
-                                                    opacity: 1,
-                                                    transform: 'translateY(0)',
-                                                    filter: 'blur(0)'
-                                                }
-                                            }
-                                        }}
-                                    >
-                                        <Typography
-                                            variant="body1"
-                                            sx={{
-                                                fontSize: '1.2rem',
-                                                minWidth: '30px',
-                                                textAlign: 'center'
-                                            }}
-                                        >
-                                            {icon}
-                                        </Typography>
-                                        <Typography
-                                            variant="caption"
-                                            color="text.secondary"
-                                            sx={{
-                                                minWidth: 80,
-                                                opacity: 0.7
-                                            }}
-                                        >
-                                            {new Date(entry.timestamp).toLocaleTimeString()}
-                                        </Typography>
-                                        <Typography
-                                            variant="body2"
-                                            sx={{
-                                                color: textColor,
-                                                textShadow: textShadow,
+                                flexDirection: 'column',
+                                gap: 1.5,
                                                 flex: 1,
-                                                whiteSpace: 'pre-line',
-                                                lineHeight: 1.5,
-                                                '& strong': {
-                                                    color: '#4A90E2',
-                                                    textShadow: '0 0 5px rgba(74, 144, 226, 0.5)',
-                                                }
-                                            }}
-                                        >
-                                            {entry.message.split(/(\s+)/).map((part, index) => {
-                                                // Check if this part is a Pokemon name (capitalized)
-                                                if (/^[A-Z][a-z]+$/.test(part)) {
-                                                    return <strong key={index}>{part}</strong>;
-                                                }
-                                                return part;
-                                            })}
-                                        </Typography>
-                                    </Box>
-                                );
-                            })}
+                                overflowY: 'auto'
+                            }}>
+                                <BattleLog logs={battleState.battleLog} />
                         </Box>
                     </Paper>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, pt: 1 }}>
+                    <Button
+                        variant="contained"
+                        onClick={handleMoveButtonClick}
+                        disabled={
+                            !battleState.team1Pokemon ||
+                            !battleState.team2Pokemon ||
+                            battleState.isAttackAnimating ||
+                            battleState.gameOver
+                        }
+                    >
+                        {battleState.selectedMove ? 'Execute Move' : 'Select Move'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
                     {/* Move Selection Dialog */}
                     {battleState.showMoveSelection && battleState.team1Pokemon && battleState.team2Pokemon && (
@@ -2028,22 +2646,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             }}
                         />
                     )}
-                </DialogContent>
-                <DialogActions sx={{ p: 2, pt: 1 }}>
-                    <Button
-                        variant="contained"
-                        onClick={handleMoveButtonClick}
-                        disabled={
-                            !battleState.team1Pokemon ||
-                            !battleState.team2Pokemon ||
-                            battleState.isAttackAnimating ||
-                            battleState.gameOver
-                        }
-                    >
-                        {battleState.selectedMove ? 'Execute Move' : 'Select Move'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {renderTeamOverview(1)}
             {renderTeamOverview(2)}

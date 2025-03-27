@@ -39,6 +39,8 @@ import ArrowDownward from '@mui/icons-material/ArrowDownward';
 import TypeEffectiveness from './TypeEffectiveness';
 import TeamBuilder from './TeamBuilder';
 import BattleSimulator from './BattleSimulator';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from 'use-debounce';
 
 interface PokemonStat {
     base_stat: number;
@@ -62,6 +64,8 @@ interface Pokemon {
     weight: number;
     stats: PokemonStat[];
     abilities: PokemonAbility[];
+    is_legendary?: boolean;
+    is_mythical?: boolean;
 }
 
 interface PokemonType {
@@ -96,6 +100,26 @@ interface EvolutionChain {
         name: string;
         url: string;
     };
+    evolution_details?: Array<{
+        trigger: {
+            name: string;
+        };
+        min_level?: number;
+        item?: {
+            name: string;
+        };
+    }>;
+    pokemon?: {
+        name: string;
+        sprites: {
+            front_default: string;
+        };
+        types: Array<{
+            type: {
+                name: string;
+            };
+        }>;
+    };
 }
 
 interface EvolutionResponse {
@@ -108,9 +132,14 @@ interface PokemonForm {
         front_default: string;
         front_shiny?: string;
     };
+    types: Array<{
+        type: {
+            name: string;
+        };
+    }>;
 }
 
-type SortField = 'name' | 'height' | 'weight' | 'hp' | 'attack' | 'defense' | 'speed';
+type SortField = 'name' | 'height' | 'weight' | 'hp' | 'attack' | 'defense' | 'speed' | 'type';
 type SortOrder = 'asc' | 'desc';
 
 interface Team {
@@ -213,6 +242,88 @@ const TYPE_EFFECTIVENESS = {
     },
 };
 
+// Add API functions
+const fetchPokemonDetails = async (id: number) => {
+    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+    const data = await response.json();
+    const speciesResponse = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${id}`);
+    const speciesData = await speciesResponse.json();
+
+    return {
+        id: data.id,
+        name: data.name,
+        image: data.sprites.front_default,
+        types: data.types.map((type: any) => type.type.name),
+        height: data.height / 10,
+        weight: data.weight / 10,
+        stats: data.stats,
+        abilities: data.abilities,
+        is_legendary: speciesData.is_legendary,
+        is_mythical: speciesData.is_mythical,
+    };
+};
+
+const fetchPokemonList = async ({ pageParam = 1 }) => {
+    const limit = 20; // Reduced from 151 to 20 for better performance
+    const offset = (pageParam - 1) * limit;
+    const response = await fetch(`https://pokeapi.co/api/v2/pokemon?limit=${limit}&offset=${offset}`);
+    const data = await response.json();
+
+    // Fetch basic details for each Pokemon
+    const pokemonDetails = await Promise.all(
+        data.results.map(async (pokemon: any) => {
+            const id = parseInt(pokemon.url.split('/').slice(-2, -1)[0]);
+            const detailsResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+            const details = await detailsResponse.json();
+
+            // Only fetch species data for special Pokemon
+            const isSpecial = id <= 151 || id >= 144; // First gen + legendaries
+            let is_legendary = false;
+            let is_mythical = false;
+
+            if (isSpecial) {
+                const speciesResponse = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${id}`);
+                const speciesData = await speciesResponse.json();
+                is_legendary = speciesData.is_legendary;
+                is_mythical = speciesData.is_mythical;
+            }
+
+            return {
+                id: details.id,
+                name: details.name,
+                image: details.sprites.front_default,
+                types: details.types.map((type: any) => type.type.name),
+                height: details.height / 10,
+                weight: details.weight / 10,
+                stats: details.stats,
+                abilities: details.abilities,
+                is_legendary,
+                is_mythical,
+            };
+        })
+    );
+
+    return {
+        pokemons: pokemonDetails,
+        nextPage: data.next ? pageParam + 1 : undefined,
+    };
+};
+
+const fetchSpecialPokemon = async () => {
+    const response = await fetch('https://pokeapi.co/api/v2/pokemon?limit=1000');
+    const data = await response.json();
+
+    const specialPokemon = await Promise.all(
+        data.results.map(async (pokemon: any) => {
+            const id = parseInt(pokemon.url.split('/').slice(-2, -1)[0]);
+            const details = await fetchPokemonDetails(id);
+            return details.is_legendary || details.is_mythical ? details : null;
+        })
+    );
+
+    return specialPokemon.filter((p): p is Pokemon => p !== null);
+};
+
 const Pokemon: React.FC = () => {
     const [pokemons, setPokemons] = useState<Pokemon[]>([]);
     const [loading, setLoading] = useState(true);
@@ -235,23 +346,52 @@ const Pokemon: React.FC = () => {
     const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
     const [selectedTypesForCalculator, setSelectedTypesForCalculator] = useState<string[]>([]);
     const observer = useRef<IntersectionObserver>();
-    const POKEMONS_PER_PAGE = 20;
+    const POKEMONS_PER_PAGE = 151;
     const [mainTab, setMainTab] = useState(0);
     const [teams, setTeams] = useState<Team[]>(() => {
         const savedTeams = localStorage.getItem('pokemonTeams');
         return savedTeams ? JSON.parse(savedTeams) : [];
     });
+    const [showLegendaries, setShowLegendaries] = useState(false);
+    const [showMythicals, setShowMythicals] = useState(false);
+    const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
+    const queryClient = useQueryClient();
+
+    // Use React Query for Pokemon list with infinite scroll
+    const {
+        data: pokemonData,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading,
+        isError,
+    } = useInfiniteQuery({
+        queryKey: ['pokemons', debouncedSearchTerm, selectedType],
+        queryFn: fetchPokemonList,
+        getNextPageParam: (lastPage) => lastPage.nextPage,
+        initialPageParam: 1,
+        maxPages: 10, // Limit the number of pages to prevent excessive data loading
+    });
+
+    // Use React Query for special Pokemon with longer cache time
+    const { data: specialPokemon } = useQuery({
+        queryKey: ['specialPokemon'],
+        queryFn: fetchSpecialPokemon,
+        enabled: showLegendaries || showMythicals,
+        staleTime: 1000 * 60 * 60 * 24, // 24 hours
+        gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
+    });
 
     const lastPokemonRef = useCallback((node: HTMLDivElement) => {
-        if (loading) return;
+        if (isFetchingNextPage) return;
         if (observer.current) observer.current.disconnect();
         observer.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting && hasMore) {
-                setPage(prevPage => prevPage + 1);
+            if (entries[0].isIntersecting && hasNextPage) {
+                fetchNextPage();
             }
         });
         if (node) observer.current.observe(node);
-    }, [loading, hasMore]);
+    }, [isFetchingNextPage, hasNextPage, fetchNextPage]);
 
     const fetchPokemons = async (pageNum: number) => {
         try {
@@ -266,35 +406,60 @@ const Pokemon: React.FC = () => {
 
             const pokemonDetails = await Promise.all(
                 data.results.map(async (pokemon) => {
-                    const detailsResponse = await fetch(pokemon.url);
-                    const details: PokemonDetails = await detailsResponse.json();
-                    return {
-                        id: details.id,
-                        name: details.name,
-                        image: details.sprites.front_default,
-                        types: details.types.map((type) => type.type.name),
-                        height: details.height / 10,
-                        weight: details.weight / 10,
-                        stats: details.stats,
-                        abilities: details.abilities,
-                    };
+                    try {
+                        const detailsResponse = await fetch(pokemon.url);
+                        const details: PokemonDetails = await detailsResponse.json();
+
+                        // Fetch species data to get legendary status
+                        const speciesResponse = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${details.id}`);
+                        const speciesData = await speciesResponse.json();
+
+                        // Debug logging for legendary/mythical status
+                        if (speciesData.is_legendary || speciesData.is_mythical) {
+                            console.log(`Found special Pokemon: ${details.name}`, {
+                                is_legendary: speciesData.is_legendary,
+                                is_mythical: speciesData.is_mythical
+                            });
+                        }
+
+                        return {
+                            id: details.id,
+                            name: details.name,
+                            image: details.sprites.front_default,
+                            types: details.types.map((type) => type.type.name),
+                            height: details.height / 10,
+                            weight: details.weight / 10,
+                            stats: details.stats,
+                            abilities: details.abilities,
+                            is_legendary: speciesData.is_legendary,
+                            is_mythical: speciesData.is_mythical,
+                        };
+                    } catch (error) {
+                        console.error(`Error fetching Pokemon ${pokemon.name}:`, error);
+                        return null;
+                    }
                 })
             );
 
-            setPokemons(prev => {
-                // Create a Map of existing Pokemon by ID
-                const existingPokemon = new Map(prev.map(p => [p.id, p]));
+            // Filter out any failed fetches
+            const validPokemon = pokemonDetails.filter((p): p is NonNullable<typeof p> => p !== null);
 
-                // Add new Pokemon only if they don't already exist
-                pokemonDetails.forEach(pokemon => {
+            setPokemons(prev => {
+                const existingPokemon = new Map(prev.map(p => [p.id, p]));
+                validPokemon.forEach(pokemon => {
                     if (!existingPokemon.has(pokemon.id)) {
                         existingPokemon.set(pokemon.id, pokemon);
                     }
                 });
-
-                // Convert Map back to array and sort by ID to maintain order
                 return Array.from(existingPokemon.values()).sort((a, b) => a.id - b.id);
             });
+
+            // Debug logging for current Pokemon list
+            console.log('Current Pokemon list:', pokemons.map(p => ({
+                name: p.name,
+                is_legendary: p.is_legendary,
+                is_mythical: p.is_mythical
+            })));
         } catch (err) {
             setError('Failed to fetch Pokemon data');
             console.error('Error fetching Pokemon:', err);
@@ -307,30 +472,39 @@ const Pokemon: React.FC = () => {
         fetchPokemons(page);
     }, [page]);
 
-    // Filter and sort Pokemon
+    // Update the filteredPokemons memo
     const filteredPokemons = React.useMemo(() => {
-        let filtered = [...pokemons];
+        let filtered = pokemonData?.pages.flatMap(page => page.pokemons) || [];
 
-        // Apply favorites filter
+        // Apply filters
         if (showFavoritesOnly) {
             filtered = filtered.filter(pokemon => favorites.has(pokemon.id));
         }
 
-        // Apply search filter
-        if (searchTerm) {
+        if (debouncedSearchTerm) {
             filtered = filtered.filter(pokemon =>
-                pokemon.name.toLowerCase().includes(searchTerm.toLowerCase())
+                pokemon.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
             );
         }
 
-        // Apply type filter
+        // Update type filtering to handle multiple types
         if (selectedType !== 'all') {
             filtered = filtered.filter(pokemon =>
-                pokemon.types.includes(selectedType)
+                pokemon.types.some((type: string) => type === selectedType)
             );
         }
 
-        // Apply sorting
+        if (showLegendaries || showMythicals) {
+            filtered = specialPokemon || [];
+            if (showLegendaries) {
+                filtered = filtered.filter(pokemon => pokemon.is_legendary);
+            }
+            if (showMythicals) {
+                filtered = filtered.filter(pokemon => pokemon.is_mythical);
+            }
+        }
+
+        // Apply sorting with improved type handling
         filtered.sort((a, b) => {
             let comparison = 0;
             switch (sortField) {
@@ -344,43 +518,80 @@ const Pokemon: React.FC = () => {
                     comparison = a.weight - b.weight;
                     break;
                 case 'hp':
-                    comparison = (a.stats.find(s => s.stat.name === 'hp')?.base_stat || 0) -
-                                (b.stats.find(s => s.stat.name === 'hp')?.base_stat || 0);
+                    comparison = (a.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'hp')?.base_stat || 0) -
+                                (b.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'hp')?.base_stat || 0);
                     break;
                 case 'attack':
-                    comparison = (a.stats.find(s => s.stat.name === 'attack')?.base_stat || 0) -
-                                (b.stats.find(s => s.stat.name === 'attack')?.base_stat || 0);
+                    comparison = (a.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'attack')?.base_stat || 0) -
+                                (b.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'attack')?.base_stat || 0);
                     break;
                 case 'defense':
-                    comparison = (a.stats.find(s => s.stat.name === 'defense')?.base_stat || 0) -
-                                (b.stats.find(s => s.stat.name === 'defense')?.base_stat || 0);
+                    comparison = (a.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'defense')?.base_stat || 0) -
+                                (b.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'defense')?.base_stat || 0);
                     break;
                 case 'speed':
-                    comparison = (a.stats.find(s => s.stat.name === 'speed')?.base_stat || 0) -
-                                (b.stats.find(s => s.stat.name === 'speed')?.base_stat || 0);
+                    comparison = (a.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'speed')?.base_stat || 0) -
+                                (b.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'speed')?.base_stat || 0);
+                    break;
+                case 'type':
+                    // Sort by primary type first, then secondary type if available
+                    const typeA = a.types[0];
+                    const typeB = b.types[0];
+                    comparison = typeA.localeCompare(typeB);
+                    if (comparison === 0 && a.types[1] && b.types[1]) {
+                        comparison = a.types[1].localeCompare(b.types[1]);
+                    }
                     break;
             }
             return sortOrder === 'asc' ? comparison : -comparison;
         });
 
         return filtered;
-    }, [pokemons, searchTerm, selectedType, sortField, sortOrder, favorites, showFavoritesOnly]);
+    }, [pokemonData, debouncedSearchTerm, selectedType, sortField, sortOrder, favorites, showFavoritesOnly, showLegendaries, showMythicals, specialPokemon]);
 
     // Get unique types for filter
-    const types = Array.from(new Set(pokemons.flatMap(p => p.types))).sort();
 
     const fetchEvolutionChain = async (speciesUrl: string) => {
         try {
             const response = await fetch(speciesUrl);
             const speciesData = await response.json();
+
             if (!speciesData.evolution_chain?.url) {
                 console.log('No evolution chain found for this Pokemon');
                 setEvolutionChain(null);
                 return;
             }
+
             const evolutionResponse = await fetch(speciesData.evolution_chain.url);
             const evolutionData: EvolutionResponse = await evolutionResponse.json();
-            setEvolutionChain(evolutionData.chain);
+
+            // Fetch additional details for each Pokemon in the chain
+            const fetchPokemonDetails = async (chain: EvolutionChain) => {
+                try {
+                    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${chain.species.name}`);
+                    const data = await response.json();
+                    return {
+                        ...chain,
+                        pokemon: {
+                            name: data.name,
+                            sprites: data.sprites,
+                            types: data.types,
+                        }
+                    };
+                } catch (error) {
+                    console.error('Error fetching Pokemon details:', error);
+                    return chain;
+                }
+            };
+
+            const processChain = async (chain: EvolutionChain): Promise<EvolutionChain> => {
+                const details = await fetchPokemonDetails(chain);
+                const evolvesTo = await Promise.all(chain.evolves_to.map(processChain));
+                return { ...details, evolves_to: evolvesTo };
+            };
+
+            const processedChain = await processChain(evolutionData.chain);
+            setEvolutionChain(processedChain);
         } catch (error) {
             console.error('Error fetching evolution chain:', error);
             setEvolutionChain(null);
@@ -389,16 +600,44 @@ const Pokemon: React.FC = () => {
 
     const fetchPokemonForms = async (pokemonId: number) => {
         try {
-            const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
-            const data = await response.json();
-            if (!data.forms?.[0]?.url) {
-                console.log('No forms found for this Pokemon');
-                setPokemonForms([]);
-                return;
-            }
-            const formsResponse = await fetch(data.forms[0].url);
-            const formsData = await formsResponse.json();
-            setPokemonForms(formsData.varieties || []);
+            // First get the species data
+            const speciesResponse = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${pokemonId}`);
+            const speciesData = await speciesResponse.json();
+
+            // Get all varieties
+            const varieties = speciesData.varieties || [];
+
+            // Fetch details for each variety
+            const formDetails = await Promise.all(
+                varieties.map(async (variety: any) => {
+                    try {
+                        const response = await fetch(variety.pokemon.url);
+                        const data = await response.json();
+                        return {
+                            name: data.name,
+                            sprites: {
+                                front_default: data.sprites.front_default,
+                                front_shiny: data.sprites.front_shiny,
+                                back_default: data.sprites.back_default,
+                                back_shiny: data.sprites.back_shiny,
+                            },
+                            types: data.types,
+                            stats: data.stats,
+                            is_default: variety.is_default,
+                        };
+                    } catch (error) {
+                        console.error('Error fetching form details:', error);
+                        return null;
+                    }
+                })
+            );
+
+            // Filter out any failed fetches and sort to put default form first
+            const validForms = formDetails
+                .filter((form): form is NonNullable<typeof form> => form !== null)
+                .sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
+
+            setPokemonForms(validForms);
         } catch (error) {
             console.error('Error fetching Pokemon forms:', error);
             setPokemonForms([]);
@@ -417,21 +656,58 @@ const Pokemon: React.FC = () => {
 
     const renderEvolutionChain = (chain: EvolutionChain, parentKey: string = '') => {
         const currentKey = `${parentKey}-${chain.species.name}`;
+
         return (
             <Box key={currentKey} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                <Typography variant="body1" sx={{ textTransform: 'capitalize' }}>
-                    {chain.species.name}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <CardMedia
+                        component="img"
+                        image={chain.pokemon?.sprites.front_default}
+                        alt={chain.species.name}
+                        sx={{ width: 80, height: 80, objectFit: 'contain' }}
+                    />
+                    <Box>
+                        <Typography variant="body1" sx={{ textTransform: 'capitalize', fontWeight: 'bold' }}>
+                            {chain.species.name}
+                        </Typography>
+                        {chain.evolution_details && chain.evolution_details.length > 0 && (
+                            <Typography variant="caption" color="text.secondary">
+                                {chain.evolution_details.map((detail, _index) => {
+                                    const trigger = detail.trigger.name.replace('-', ' ');
+                                    const level = detail.min_level ? ` at level ${detail.min_level}` : '';
+                                    const item = detail.item ? ` using ${detail.item.name.replace('-', ' ')}` : '';
+                                    return `${trigger}${level}${item}`;
+                                }).join(' or ')}
+                            </Typography>
+                        )}
+                        {chain.pokemon?.types && (
+                            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                                {chain.pokemon.types.map((type: any) => (
+                                    <Chip
+                                        key={type.type.name}
+                                        label={type.type.name}
+                                        size="small"
+                                        sx={{
+                                            backgroundColor: getTypeColor(type.type.name),
+                                            color: 'white',
+                                            textTransform: 'capitalize',
+                                        }}
+                                    />
+                                ))}
+                            </Box>
+                        )}
+                    </Box>
+                </Box>
                 {chain.evolves_to.length > 0 && (
-                    <>
-                        <Typography>→</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Typography sx={{ color: 'text.secondary' }}>→</Typography>
                         {chain.evolves_to.map((evolution, index) => (
                             <React.Fragment key={`${currentKey}-${index}`}>
-                                {index > 0 && <Typography>→</Typography>}
+                                {index > 0 && <Typography sx={{ color: 'text.secondary' }}>→</Typography>}
                                 {renderEvolutionChain(evolution, currentKey)}
                             </React.Fragment>
                         ))}
-                    </>
+                    </Box>
                 )}
             </Box>
         );
@@ -472,7 +748,7 @@ const Pokemon: React.FC = () => {
 
                 <Tabs
                     value={activeTab}
-                    onChange={(_, newValue) => setActiveTab(newValue)}
+                    onChange={(_: any, newValue: React.SetStateAction<number>) => setActiveTab(newValue)}
                     sx={{ mb: 3 }}
                 >
                     <Tab label="Details" />
@@ -559,7 +835,21 @@ const Pokemon: React.FC = () => {
                         <Typography variant="h6" gutterBottom>
                             Evolution Chain
                         </Typography>
-                        {evolutionChain && renderEvolutionChain(evolutionChain)}
+                        {evolutionChain ? (
+                            <Box sx={{
+                                p: 2,
+                                borderRadius: 2,
+                                bgcolor: 'background.paper',
+                                border: '1px solid',
+                                borderColor: 'divider'
+                            }}>
+                                {renderEvolutionChain(evolutionChain)}
+                            </Box>
+                        ) : (
+                            <Typography color="text.secondary">
+                                This Pokémon does not evolve.
+                            </Typography>
+                        )}
                     </Box>
                 )}
 
@@ -568,27 +858,82 @@ const Pokemon: React.FC = () => {
                         <Typography variant="h6" gutterBottom>
                             Forms
                         </Typography>
-                        <Grid container spacing={2}>
-                            {pokemonForms.map((form) => (
-                                <Grid item xs={6} sm={4} md={3} key={`${selectedPokemon?.id}-${form.name}`}>
-                                    <Card>
-                                        <CardMedia
-                                            component="img"
-                                            image={form.sprites.front_default}
-                                            alt={form.name}
-                                            sx={{ height: 150, objectFit: 'contain' }}
-                                        />
-                                        <CardContent>
-                                            <Typography variant="body2" align="center">
-                                                {form.name.split('-').map(word =>
-                                                    word.charAt(0).toUpperCase() + word.slice(1)
-                                                ).join(' ')}
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            ))}
-                        </Grid>
+                        {pokemonForms.length > 0 ? (
+                            <Grid container spacing={2}>
+                                {pokemonForms.map((form) => (
+                                    <Grid item xs={6} sm={4} md={3} key={`${selectedPokemon?.id}-${form.name}`}>
+                                        <Card sx={{
+                                            height: '100%',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            transition: 'transform 0.2s',
+                                            '&:hover': {
+                                                transform: 'scale(1.05)'
+                                            }
+                                        }}>
+                                            <CardMedia
+                                                component="img"
+                                                image={form.sprites.front_default}
+                                                alt={form.name}
+                                                sx={{
+                                                    height: 150,
+                                                    objectFit: 'contain',
+                                                    p: 2,
+                                                    bgcolor: 'background.default'
+                                                }}
+                                            />
+                                            <CardContent sx={{ flexGrow: 1 }}>
+                                                <Typography variant="subtitle1" align="center" gutterBottom>
+                                                    {form.name.split('-').map(word =>
+                                                        word.charAt(0).toUpperCase() + word.slice(1)
+                                                    ).join(' ')}
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 1 }}>
+                                                    {form.types.map((type: any) => (
+                                                        <Chip
+                                                            key={type.type.name}
+                                                            label={type.type.name}
+                                                            size="small"
+                                                            sx={{
+                                                                backgroundColor: getTypeColor(type.type.name),
+                                                                color: 'white',
+                                                                textTransform: 'capitalize',
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                                {form.sprites.front_shiny && (
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        justifyContent: 'center',
+                                                        gap: 1,
+                                                        mt: 1
+                                                    }}>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            Shiny:
+                                                        </Typography>
+                                                        <CardMedia
+                                                            component="img"
+                                                            image={form.sprites.front_shiny}
+                                                            alt={`${form.name} shiny`}
+                                                            sx={{
+                                                                width: 40,
+                                                                height: 40,
+                                                                objectFit: 'contain'
+                                                            }}
+                                                        />
+                                                    </Box>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        ) : (
+                            <Typography color="text.secondary">
+                                This Pokémon has no alternate forms.
+                            </Typography>
+                        )}
                     </Box>
                 )}
             </Box>
@@ -785,7 +1130,7 @@ const Pokemon: React.FC = () => {
             <Paper sx={{ mb: 3 }}>
                 <Tabs
                     value={mainTab}
-                    onChange={(_, newValue) => setMainTab(newValue)}
+                    onChange={(_: any, newValue: React.SetStateAction<number>) => setMainTab(newValue)}
                     variant="fullWidth"
                     sx={{
                         borderBottom: 1,
@@ -837,7 +1182,9 @@ const Pokemon: React.FC = () => {
                                     label="Type"
                                 >
                                     <MenuItem value="all">All Types</MenuItem>
-                                    {types.map((type) => (
+                                    {Array.from(new Set(pokemonData?.pages.flatMap(page =>
+                                        page.pokemons.flatMap(p => p.types)
+                                    ) || [])).sort().map((type) => (
                                         <MenuItem key={type} value={type}>
                                             {type.charAt(0).toUpperCase() + type.slice(1)}
                                         </MenuItem>
@@ -852,6 +1199,7 @@ const Pokemon: React.FC = () => {
                                     label="Sort By"
                                 >
                                     <MenuItem value="name">Name</MenuItem>
+                                    <MenuItem value="type">Type</MenuItem>
                                     <MenuItem value="height">Height</MenuItem>
                                     <MenuItem value="weight">Weight</MenuItem>
                                     <MenuItem value="hp">HP</MenuItem>
@@ -887,6 +1235,46 @@ const Pokemon: React.FC = () => {
                             >
                                 <FavoriteIcon sx={{ mr: 1 }} />
                                 Favorites Only
+                            </ToggleButton>
+                            <ToggleButton
+                                value="legendary"
+                                selected={showLegendaries}
+                                onChange={() => setShowLegendaries(!showLegendaries)}
+                                color="primary"
+                                size="small"
+                                sx={{
+                                    borderRadius: 1,
+                                    minWidth: { xs: '100%', sm: 'auto' },
+                                    '&.Mui-selected': {
+                                        backgroundColor: 'primary.main',
+                                        color: 'white',
+                                        '&:hover': {
+                                            backgroundColor: 'primary.dark',
+                                        },
+                                    },
+                                }}
+                            >
+                                Legendary
+                            </ToggleButton>
+                            <ToggleButton
+                                value="mythical"
+                                selected={showMythicals}
+                                onChange={() => setShowMythicals(!showMythicals)}
+                                color="primary"
+                                size="small"
+                                sx={{
+                                    borderRadius: 1,
+                                    minWidth: { xs: '100%', sm: 'auto' },
+                                    '&.Mui-selected': {
+                                        backgroundColor: 'primary.main',
+                                        color: 'white',
+                                        '&:hover': {
+                                            backgroundColor: 'primary.dark',
+                                        },
+                                    },
+                                }}
+                            >
+                                Mythical
                             </ToggleButton>
                         </Box>
                         {showFavoritesOnly && filteredPokemons.length === 0 && (
@@ -929,7 +1317,7 @@ const Pokemon: React.FC = () => {
                                     }}
                                 >
                                     <IconButton
-                                        onClick={(e) => toggleFavorite(pokemon.id, e)}
+                                        onClick={(e: React.MouseEvent<Element, MouseEvent>) => toggleFavorite(pokemon.id, e)}
                                         sx={{
                                             position: 'absolute',
                                             top: 8,
@@ -976,11 +1364,11 @@ const Pokemon: React.FC = () => {
                                             flexWrap="wrap"
                                             sx={{ mb: 2 }}
                                         >
-                                            {pokemon.types.map((type) => (
+                                            {pokemon.types.map((type: string) => (
                                                 <Typography
                                                     key={type}
                                                     variant="body2"
-                                                    onClick={(e) => {
+                                                    onClick={(e: { stopPropagation: () => void; }) => {
                                                         e.stopPropagation();
                                                         handleTypeClick(type);
                                                     }}
@@ -1011,7 +1399,7 @@ const Pokemon: React.FC = () => {
                                                 Height: {pokemon.height}m | Weight: {pokemon.weight}kg
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                                Abilities: {pokemon.abilities.map(a => a.ability.name).join(', ')}
+                                                Abilities: {pokemon.abilities.map((a: { ability: { name: any; }; }) => a.ability.name).join(', ')}
                                             </Typography>
                                         </Box>
 
@@ -1019,7 +1407,7 @@ const Pokemon: React.FC = () => {
                                             <Typography variant="subtitle2" gutterBottom>
                                                 Base Stats:
                                             </Typography>
-                                            {pokemon.stats.map((stat) => (
+                                            {pokemon.stats.map((stat: { stat: { name: string; }; base_stat: number; }) => (
                                                 <Box key={stat.stat.name} sx={{ mb: 1 }}>
                                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                                                         <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
@@ -1128,9 +1516,21 @@ const Pokemon: React.FC = () => {
                 </Alert>
             </Snackbar>
 
-            {loading && (
+            {isLoading && (
                 <Box display="flex" justifyContent="center" sx={{ mt: 4 }}>
                     <CircularProgress sx={{ color: 'primary.main' }} />
+                </Box>
+            )}
+            {isFetchingNextPage && (
+                <Box display="flex" justifyContent="center" sx={{ mt: 4 }}>
+                    <CircularProgress size={24} sx={{ color: 'primary.main' }} />
+                </Box>
+            )}
+            {isError && (
+                <Box display="flex" justifyContent="center" sx={{ mt: 4 }}>
+                    <Typography color="error">
+                        Error loading Pokemon data. Please try again later.
+                    </Typography>
                 </Box>
             )}
         </Container>
