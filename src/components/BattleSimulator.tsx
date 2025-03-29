@@ -17,6 +17,10 @@ import {
     IconButton,
     Slider,
     Stack,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
 } from '@mui/material';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import CloseIcon from '@mui/icons-material/Close';
@@ -26,6 +30,7 @@ import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { keyframes } from '@emotion/react';
 import { playSound, stopAllSounds, setVolume as setSoundVolume, getVolume, preloadSounds } from '../utils/soundEffects';
 import { styled } from '@mui/material/styles';
+import { selectAIMove, AIDifficulty, AIPersonality } from '../utils/battleAI';
 
 // Remove unused animations
 const screenFlash = keyframes`
@@ -423,6 +428,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [volume, setVolume] = useState(getVolume());
 
+    // Add AI difficulty and personality state
+    const [aiDifficulty, setAIDifficulty] = useState<AIDifficulty>('intermediate');
+    const [aiPersonality, setAIPersonality] = useState<AIPersonality>('balanced');
+
     // Save selected teams to localStorage when they change
     useEffect(() => {
         if (team1) {
@@ -664,131 +673,33 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
     // Update handleAttack to properly update health
     const handleAttack = async () => {
-        if (!battleState.team1Pokemon || !battleState.team2Pokemon || !battleState.selectedMove) return;
+        console.log('Executing attack...'); // Debug log
+        if (!battleState.team1Pokemon || !battleState.team2Pokemon || !battleState.selectedMove) {
+            console.log('Missing required data for attack:', {
+                team1Pokemon: !!battleState.team1Pokemon,
+                team2Pokemon: !!battleState.team2Pokemon,
+                selectedMove: !!battleState.selectedMove
+            });
+            return;
+        }
 
         const attacker = battleState.currentTurn === 1 ? battleState.team1Pokemon : battleState.team2Pokemon;
         const defender = battleState.currentTurn === 1 ? battleState.team2Pokemon : battleState.team1Pokemon;
         const move = battleState.selectedMove;
 
-        // Check for status effects
-        const statusEffect = battleState.statusEffects[attacker.id];
-        if (statusEffect) {
-            if (statusEffect.type === 'sleep' && statusEffect.turns > 0) {
-                setBattleState(prev => ({
-                    ...prev,
-                    battleLog: [addBattleLogEntry(`${attacker.name} is fast asleep!`, 'normal'), ...prev.battleLog],
-                    statusEffects: {
-                        ...prev.statusEffects,
-                        [attacker.id]: { ...statusEffect, turns: statusEffect.turns - 1 }
-                    },
-                    currentTurn: prev.currentTurn === 1 ? 2 : 1, // Switch turns when Pokémon is asleep
-                    selectedMove: null
-                }));
-                return;
-            }
-            if (statusEffect.type === 'paralysis' && Math.random() < 0.25) {
-                setBattleState(prev => ({
-                    ...prev,
-                    battleLog: [addBattleLogEntry(`${attacker.name} is paralyzed! It can't move!`, 'normal'), ...prev.battleLog],
-                    currentTurn: prev.currentTurn === 1 ? 2 : 1, // Switch turns when Pokémon is paralyzed
-                    selectedMove: null
-                }));
-                return;
-            }
-            if (statusEffect.type === 'freeze' && Math.random() < 0.2) {
-                setBattleState(prev => ({
-                    ...prev,
-                    battleLog: [addBattleLogEntry(`${attacker.name} is frozen solid!`, 'normal'), ...prev.battleLog]
-                }));
-                return;
-            }
-        }
-
-        // Calculate damage with weather effects
-        let { damage, isCritical } = calculateDamage(attacker, defender, move);
-
-        // Apply weather effects
-        if (battleState.weather === 'sunny' && move.type === 'fire') {
-            damage = Math.floor(damage * 1.5);
-            setBattleState(prev => ({
-                ...prev,
-                battleLog: [addBattleLogEntry('The sunlight intensified the attack!', 'normal'), ...prev.battleLog]
-            }));
-        } else if (battleState.weather === 'rain' && move.type === 'water') {
-            damage = Math.floor(damage * 1.5);
-            setBattleState(prev => ({
-                ...prev,
-                battleLog: [addBattleLogEntry('The rain intensified the attack!', 'normal'), ...prev.battleLog]
-            }));
-        }
-
-        // Handle special effects
-        if (move.specialEffect && Math.random() < move.specialEffect.chance) {
-            switch (move.specialEffect.type) {
-                case 'heal':
-                    const healAmount = Math.floor(move.specialEffect.value);
-                    setBattleState(prev => ({
-                        ...prev,
-                        battleLog: [addBattleLogEntry(`${attacker.name} healed for ${healAmount} HP!`, 'normal'), ...prev.battleLog],
-                        team1Health: {
-                            ...prev.team1Health,
-                            [attacker.id]: Math.min(100, prev.team1Health[attacker.id] + healAmount)
-                        },
-                        team2Health: {
-                            ...prev.team2Health,
-                            [attacker.id]: Math.min(100, prev.team2Health[attacker.id] + healAmount)
-                        }
-                    }));
-                    break;
-                case 'weather':
-                    const weatherTypes: WeatherType[] = ['none', 'rain', 'sunny', 'sandstorm', 'hail'];
-                    const newWeather = weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
-                    changeWeather(newWeather);
-                    break;
-                case 'terrain':
-                    damage = Math.floor(damage * move.specialEffect.value);
-                    setBattleState(prev => ({
-                        ...prev,
-                        battleLog: [addBattleLogEntry('The terrain changed!', 'normal'), ...prev.battleLog]
-                    }));
-                    break;
-                case 'boost':
-                    const boostAmount = Math.floor(move.specialEffect.value * 100);
-                    setBattleState(prev => ({
-                        ...prev,
-                        battleLog: [addBattleLogEntry(`${attacker.name}'s attack rose!`, 'normal'), ...prev.battleLog],
-                        battleStats: {
-                            ...prev.battleStats,
-                            [prev.currentTurn === 1 ? 'team1' : 'team2']: {
-                                ...prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'],
-                                damageDealt: Math.floor(prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'].damageDealt * (move.specialEffect?.value ?? 1))
-                            }
-                        }
-                    }));
-                    break;
-            }
-        }
-
-        // Handle combo moves
-        if (move.comboMove && Math.random() < move.comboMove.chance) {
-            setBattleState(prev => ({
-                ...prev,
-                battleLog: [addBattleLogEntry(`${attacker.name} followed up with ${move.comboMove!.name}!`, 'normal'), ...prev.battleLog]
-            }));
-            const comboDamage = calculateDamage(attacker, defender, move.comboMove).damage;
-            damage += comboDamage;
-        }
+        console.log('Attack details:', { // Debug log
+            attacker: attacker.name,
+            defender: defender.name,
+            move: move.name,
+            currentTurn: battleState.currentTurn
+        });
 
         // Start attack animation
         setBattleState(prev => ({ ...prev, isAttackAnimating: true }));
 
         // Play attack sound
         if (soundEnabled) {
-            if (isCritical) {
-                playSound('critical');
-            } else {
-                playSound('attack');
-            }
+            playSound('attack');
         }
 
         // Generate particles
@@ -797,7 +708,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         // Wait for animation
         await new Promise(resolve => setTimeout(resolve, 1000 / battleState.battleSpeed));
 
-        // Apply damage and handle status effects
+        // Calculate damage
+        const { damage, isCritical } = calculateDamage(attacker, defender, move);
+
+        // Apply damage and update state
         setBattleState(prev => {
             const defenderHealth = prev.currentTurn === 1
                 ? prev.team2Health[defender.id]
@@ -805,90 +719,15 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
             const newHealth = Math.max(0, defenderHealth - damage);
 
-            // Play faint sound if Pokemon faints
-            if (newHealth === 0 && soundEnabled) {
-                playSound('faint');
-            }
-
             const updatedHealth = prev.currentTurn === 1
                 ? { ...prev.team2Health, [defender.id]: newHealth }
                 : { ...prev.team1Health, [defender.id]: newHealth };
-
-            // Apply status effect if move has one
-            const updatedStatusEffects = { ...prev.statusEffects };
-            let statusMessage = '';
-
-            if (move.statusEffect && Math.random() < move.statusEffect.chance) {
-                updatedStatusEffects[defender.id] = {
-                    type: move.statusEffect.type,
-                    turns: Math.floor(Math.random() * 3) + 2 // 2-4 turns
-                };
-                statusMessage = ` ${defender.name} was inflicted with ${move.statusEffect.type}!`;
-            }
-
-            // Apply status effect damage
-            Object.entries(prev.statusEffects).forEach(([pokemonId, effect]) => {
-                const pokemon = parseInt(pokemonId);
-                if (effect.turns > 0) {
-                    if (effect.type === 'burn' || effect.type === 'poison') {
-                        const statusDamage = Math.floor(100 * 0.0625); // 1/16th of max HP
-                        const currentHealth = prev.currentTurn === 1
-                            ? prev.team1Health[pokemon]
-                            : prev.team2Health[pokemon];
-
-                        if (pokemon === prev.team1Pokemon?.id) {
-                            const newHealthValue = Math.max(0, currentHealth - statusDamage);
-                            updatedHealth[pokemon] = newHealthValue;
-                        } else if (pokemon === prev.team2Pokemon?.id) {
-                            const newHealthValue = Math.max(0, currentHealth - statusDamage);
-                            updatedHealth[pokemon] = newHealthValue;
-                        }
-
-                        const pokemonName = pokemon === prev.team1Pokemon?.id
-                            ? prev.team1Pokemon.name
-                            : prev.team2Pokemon?.name;
-
-                        if (pokemonName) {
-                            statusMessage += ` ${effect.type === 'burn' ? 'Burn' : 'Poison'} dealt damage to ${pokemonName}!`;
-                        }
-                    }
-
-                    updatedStatusEffects[pokemon] = {
-                        ...effect,
-                        turns: effect.turns - 1
-                    };
-
-                    if (updatedStatusEffects[pokemon].turns === 0) {
-                        delete updatedStatusEffects[pokemon];
-                        const pokemonName = pokemon === prev.team1Pokemon?.id
-                            ? prev.team1Pokemon.name
-                            : prev.team2Pokemon?.name;
-                        if (pokemonName) {
-                            statusMessage += ` ${pokemonName} recovered from ${effect.type}!`;
-                        }
-                    }
-                }
-            });
-
-            // Update battle stats
-            const teamKey = prev.currentTurn === 1 ? 'team1' : 'team2';
-            const newStats = {
-                ...prev.battleStats,
-                [teamKey]: {
-                    ...prev.battleStats[teamKey],
-                    damageDealt: prev.battleStats[teamKey].damageDealt + damage,
-                    criticalHits: prev.battleStats[teamKey].criticalHits + (isCritical ? 1 : 0),
-                    statusEffectsApplied: prev.battleStats[teamKey].statusEffectsApplied + (statusMessage ? 1 : 0),
-                    turnsTaken: prev.battleStats[teamKey].turnsTaken + 1
-                }
-            };
 
             let message = `${attacker.name} used ${move.name}!`;
             if (isCritical) message += ' Critical hit!';
             if (damage > 0) {
                 message += ` <span class="damage-text">(-${damage} HP)</span>`;
             }
-            if (statusMessage) message += statusMessage;
             if (newHealth === 0) message += `\n${defender.name} fainted!`;
 
             return {
@@ -897,8 +736,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 team2Health: prev.currentTurn === 1 ? updatedHealth : prev.team2Health,
                 lastDamage: damage,
                 criticalHit: isCritical,
-                statusEffects: updatedStatusEffects,
-                battleStats: newStats,
                 battleLog: [addBattleLogEntry(message, newHealth === 0 ? 'death' : isCritical ? 'critical' : 'normal'), ...prev.battleLog],
                 isAttackAnimating: false,
                 currentTurn: prev.currentTurn === 1 ? 2 : 1,
@@ -910,7 +747,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         // Check for game over
         const { isOver, winner } = checkGameOver(battleState);
         if (isOver) {
-            // Play victory sound
             if (soundEnabled) {
                 playSound('victory');
             }
@@ -2046,6 +1882,159 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         </Box>
     );
 
+    // Update the AI turn effect
+    useEffect(() => {
+        if (
+            battleState.currentTurn === 2 &&
+            !battleState.isAttackAnimating &&
+            !battleState.gameOver &&
+            battleState.team1Pokemon &&
+            battleState.team2Pokemon &&
+            !battleState.selectedMove
+        ) {
+            console.log('AI turn starting...'); // Debug log
+            const timer = setTimeout(async () => {
+                try {
+                    const aiMove = selectAIMove(battleState, typeEffectiveness, aiDifficulty, aiPersonality);
+                    console.log('AI selected move:', aiMove.name); // Debug log
+
+                    // Set the selected move
+                    setBattleState(prev => ({
+                        ...prev,
+                        selectedMove: aiMove,
+                        isAttackAnimating: true
+                    }));
+
+                    // Wait for state update
+                    await new Promise(resolve => setTimeout(resolve, 0));
+
+                    // Get attacker and defender
+                    const attacker = battleState.team2Pokemon;
+                    const defender = battleState.team1Pokemon;
+
+                    // Ensure both Pokémon are present
+                    if (!attacker || !defender) {
+                        console.error('Missing Pokémon for AI attack');
+                        return;
+                    }
+
+                    // Type assertion after null check
+                    const safeAttacker = attacker as Pokemon;
+                    const safeDefender = defender as Pokemon;
+
+                    console.log('AI attack details:', {
+                        attacker: safeAttacker.name,
+                        defender: safeDefender.name,
+                        move: aiMove.name
+                    });
+
+                    // Calculate damage
+                    const { damage, isCritical } = calculateDamage(safeAttacker, safeDefender, aiMove);
+
+                    // Apply damage and update state
+                    setBattleState(prev => {
+                        const defenderHealth = prev.team1Health[safeDefender.id];
+                        const newHealth = Math.max(0, defenderHealth - damage);
+
+                        let message = `${safeAttacker.name} used ${aiMove.name}!`;
+                        if (isCritical) message += ' Critical hit!';
+                        if (damage > 0) {
+                            message += ` <span class="damage-text">(-${damage} HP)</span>`;
+                        }
+                        if (newHealth === 0) message += `\n${safeDefender.name} fainted!`;
+
+                        return {
+                            ...prev,
+                            team1Health: { ...prev.team1Health, [safeDefender.id]: newHealth },
+                            lastDamage: damage,
+                            criticalHit: isCritical,
+                            battleLog: [addBattleLogEntry(message, newHealth === 0 ? 'death' : isCritical ? 'critical' : 'normal'), ...prev.battleLog],
+                            isAttackAnimating: false,
+                            currentTurn: 1,
+                            selectedMove: null,
+                            isTurnTimerActive: true
+                        };
+                    });
+
+                    // Check for game over
+                    const { isOver, winner } = checkGameOver(battleState);
+                    if (isOver) {
+                        if (soundEnabled) {
+                            playSound('victory');
+                        }
+
+                        setBattleState(prev => ({
+                            ...prev,
+                            gameOver: true,
+                            winner,
+                            battleLog: [addBattleLogEntry(`Team ${winner} wins the battle!`, 'victory'), ...prev.battleLog]
+                        }));
+                    }
+                } catch (error) {
+                    console.error('AI move selection error:', error);
+                    // If AI fails to select a move, end its turn
+                    setBattleState(prev => ({
+                        ...prev,
+                        currentTurn: 1,
+                        isTurnTimerActive: true
+                    }));
+                }
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [
+        battleState.currentTurn,
+        battleState.isAttackAnimating,
+        battleState.gameOver,
+        battleState.team1Pokemon,
+        battleState.team2Pokemon,
+        battleState.selectedMove,
+        aiDifficulty,
+        aiPersonality
+    ]);
+
+    // Add AI settings controls
+    const AISettings = () => (
+        <Box sx={{
+            display: 'flex',
+            gap: 2,
+            alignItems: 'center',
+            mb: 2,
+            p: 2,
+            bgcolor: 'rgba(22, 33, 62, 0.8)',
+            borderRadius: 2,
+            backdropFilter: 'blur(10px)',
+            width: '100%',
+            background: 'linear-gradient(165deg, rgba(22, 33, 62, 0.8) 0%, rgba(26, 32, 53, 0.8) 100%)',
+        }}>
+            <Typography variant="subtitle1">AI Settings</Typography>
+            <FormControl size="small">
+                <InputLabel>Difficulty</InputLabel>
+                <Select
+                    value={aiDifficulty}
+                    onChange={(e) => setAIDifficulty(e.target.value as AIDifficulty)}
+                    label="Difficulty"
+                >
+                    <MenuItem value="beginner">Beginner</MenuItem>
+                    <MenuItem value="intermediate">Intermediate</MenuItem>
+                    <MenuItem value="expert">Expert</MenuItem>
+                </Select>
+            </FormControl>
+            <FormControl size="small">
+                <InputLabel>Personality</InputLabel>
+                <Select
+                    value={aiPersonality}
+                    onChange={(e) => setAIPersonality(e.target.value as AIPersonality)}
+                    label="Personality"
+                >
+                    <MenuItem value="aggressive">Aggressive</MenuItem>
+                    <MenuItem value="defensive">Defensive</MenuItem>
+                    <MenuItem value="balanced">Balanced</MenuItem>
+                </Select>
+            </FormControl>
+        </Box>
+    );
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -2649,6 +2638,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
             {renderTeamOverview(1)}
             {renderTeamOverview(2)}
+
+            <AISettings />
         </Box>
     );
 };
