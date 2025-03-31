@@ -1346,7 +1346,7 @@ const Pokemon: React.FC = () => {
                                         <Typography
                                             gutterBottom
                                             variant="h5"
-                                            component="h2"
+                                            component="div"
                                             sx={{
                                                 textTransform: 'capitalize',
                                                 color: 'primary.main',

@@ -1,48 +1,9 @@
+import { Pokemon } from './pokemon';
+import { Move } from './moves';
 import { Ability } from './abilities';
-
-export interface Pokemon {
-    id: number;
-    name: string;
-    image: string;
-    types: string[];
-    height: number;
-    weight: number;
-    stats: {
-        base_stat: number;
-        stat: {
-            name: string;
-        };
-    }[];
-    abilities: {
-        ability: {
-            name: string;
-        };
-    }[];
-    activeAbility?: Ability;
-}
-
-export interface Move {
-    name: string;
-    type: string;
-    power: number;
-    accuracy?: number;
-    energyCost: number;
-    statusEffect?: {
-        type: 'paralysis' | 'sleep' | 'poison' | 'burn' | 'freeze' | 'confusion';
-        chance: number;
-    };
-    comboMove?: {
-        name: string;
-        type: string;
-        power: number;
-        chance: number;
-    };
-    specialEffect?: {
-        type: 'heal' | 'boost' | 'weather' | 'terrain';
-        value: number;
-        chance: number;
-    };
-}
+import { StatusEffect } from './status';
+import { Particle } from './particles';
+import { WeatherType } from './weather';
 
 export interface BattleState {
     team1Pokemon: Pokemon | null;
@@ -72,12 +33,9 @@ export interface BattleState {
         attackerType: string;
         defenderType: string;
     } | null;
-    weather: 'none' | 'rain' | 'sunny' | 'sandstorm' | 'hail';
+    weather: WeatherType;
     statusEffects: {
-        [key: number]: {
-            type: 'paralysis' | 'sleep' | 'poison' | 'burn' | 'freeze' | 'confusion';
-            turns: number;
-        };
+        [key: number]: StatusEffect;
     };
     showScreenFlash: boolean;
     particles: Particle[];
@@ -115,34 +73,4 @@ export interface BattleState {
             regeneration: number;
         };
     };
-}
-
-export interface FloatingInfo {
-    id: number;
-    targetId: number;
-    text: string;
-    color: string;
-    type: 'damage' | 'status' | 'effectiveness';
-}
-
-export interface Team {
-    id: string;
-    name: string;
-    pokemon: Pokemon[];
-}
-
-export interface Particle {
-    id: number;
-    type: string;
-    x: number;
-    y: number;
-    xOffset: number;
-    velocityX: number;
-    velocityY: number;
-    life: number;
-}
-
-export interface StatusEffect {
-    type: 'paralysis' | 'sleep' | 'poison' | 'burn' | 'freeze' | 'confusion';
-    turns: number;
 }
