@@ -23,7 +23,7 @@ export interface CardEffect {
     target?: 'minion' | 'hero' | 'all';
     value?: number;
     condition?: string;
-    action: string;
+    description: string;
 }
 
 export interface Player {

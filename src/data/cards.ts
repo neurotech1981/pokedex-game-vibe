@@ -1,4 +1,4 @@
-import { Card, CardClass, CardRarity, CardType } from '../types/card';
+import { Card, CardClass, CardRarity, CardType, CardEffect } from '../types/card';
 import { v4 as uuidv4 } from 'uuid';
 
 export const createCard = (
@@ -11,7 +11,7 @@ export const createCard = (
     image: string,
     attack?: number,
     health?: number,
-    effects?: any[],
+    effects: CardEffect[] = [],
     flavorText?: string,
     artist?: string
 ): Card => ({
@@ -25,7 +25,36 @@ export const createCard = (
     rarity,
     class: cardClass,
     image,
-    effects,
+    effects: effects || [],
+    flavorText,
+    artist
+});
+
+export const createGameCard = (
+    name: string,
+    description: string,
+    cost: number,
+    type: CardType,
+    rarity: CardRarity,
+    cardClass: CardClass,
+    image: string,
+    attack?: number,
+    health?: number,
+    effects: CardEffect[] = [],
+    flavorText?: string,
+    artist?: string
+): Card => ({
+    id: uuidv4(),
+    name,
+    description,
+    cost,
+    attack,
+    health,
+    type,
+    rarity,
+    class: cardClass,
+    image,
+    effects: effects || [],
     flavorText,
     artist
 });
@@ -264,7 +293,7 @@ export const cards: Card[] = [
     // Dark Type Cards
     createCard(
         'Darkrai',
-        'Put a random card from your opponent's hand into their deck',
+        'Put a random card from your opponent\'s hand into their deck',
         6,
         'minion',
         'legendary',
@@ -382,7 +411,7 @@ export const cards: Card[] = [
         2,
         'spell',
         'common',
-        'neutral',
+        'normal',
         '/images/cards/potion.jpg',
         undefined,
         undefined,
@@ -400,7 +429,7 @@ export const cards: Card[] = [
         1,
         'spell',
         'common',
-        'neutral',
+        'normal',
         '/images/cards/pokeball.jpg',
         undefined,
         undefined,
@@ -413,6 +442,19 @@ export const cards: Card[] = [
         ]
     )
 ];
+
+// Example card using our new type-safe function
+export const devCard = createGameCard(
+    'Debug Card',
+    'A card for testing purposes',
+    1,
+    'minion',
+    'common',
+    'normal',
+    '/images/cards/debug.jpg',
+    1,
+    1
+);
 
 export const getStarterDeck = (): Card[] => {
     const starterDeck: Card[] = [];

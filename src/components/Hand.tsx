@@ -8,6 +8,7 @@ interface HandProps {
     cards: Card[];
     onCardClick: (action: any) => void;
     disabled?: boolean;
+    mana?: number;
 }
 
 const HandContainer = styled(Box)(({ theme }) => ({
@@ -20,7 +21,7 @@ const HandContainer = styled(Box)(({ theme }) => ({
     minHeight: '300px'
 }));
 
-const Hand: React.FC<HandProps> = ({ cards, onCardClick, disabled }) => {
+const Hand: React.FC<HandProps> = ({ cards, onCardClick, disabled, mana = 0 }) => {
     return (
         <HandContainer>
             {cards.map(card => (
@@ -32,7 +33,7 @@ const Hand: React.FC<HandProps> = ({ cards, onCardClick, disabled }) => {
                         playerId: 'player',
                         cardId: card.id
                     })}
-                    disabled={disabled || card.cost > 30} // Replace 30 with actual player mana
+                    disabled={disabled || card.cost > mana}
                 />
             ))}
         </HandContainer>

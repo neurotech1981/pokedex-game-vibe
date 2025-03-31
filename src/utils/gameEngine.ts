@@ -70,9 +70,11 @@ export class GameEngine {
 
         // Handle battlecry effects
         if (card.type === 'minion') {
-            card.effects
-                .filter(effect => effect.type === 'battlecry')
-                .forEach(effect => this.applyEffect(effect, card));
+            if (card.effects && Array.isArray(card.effects)) {
+                card.effects
+                    .filter(effect => effect.type === 'battlecry')
+                    .forEach(effect => this.applyEffect(effect, card));
+            }
         }
 
         this.state.lastPlayedCard = card;
@@ -94,17 +96,21 @@ export class GameEngine {
 
         // Handle deathrattles
         if (defender.health <= 0) {
-            defender.effects
-                .filter(effect => effect.type === 'deathrattle')
-                .forEach(effect => this.applyEffect(effect, defender));
+            if (defender.effects && Array.isArray(defender.effects)) {
+                defender.effects
+                    .filter(effect => effect.type === 'deathrattle')
+                    .forEach(effect => this.applyEffect(effect, defender));
+            }
             this.state.players[1 - action.playerId].board = this.state.players[1 - action.playerId].board
                 .filter(c => c.id !== defender.id);
         }
 
         if (attacker.health <= 0) {
-            attacker.effects
-                .filter(effect => effect.type === 'deathrattle')
-                .forEach(effect => this.applyEffect(effect, attacker));
+            if (attacker.effects && Array.isArray(attacker.effects)) {
+                attacker.effects
+                    .filter(effect => effect.type === 'deathrattle')
+                    .forEach(effect => this.applyEffect(effect, attacker));
+            }
             player.board = player.board.filter(c => c.id !== attacker.id);
         }
 
@@ -120,7 +126,9 @@ export class GameEngine {
         }
 
         player.mana -= heroPower.cost;
-        heroPower.effects.forEach(effect => this.applyEffect(effect, heroPower));
+        if (heroPower.effects && Array.isArray(heroPower.effects)) {
+            heroPower.effects.forEach(effect => this.applyEffect(effect, heroPower));
+        }
 
         this.state.battleLog.push(`${player.name} used ${heroPower.name}`);
     }
@@ -154,18 +162,28 @@ export class GameEngine {
     }
 
     private applyEffect(effect: Card['effects'][0], source: Card): void {
+        // Ensure we have a valid effect
+        if (!effect || !effect.type) {
+            console.warn('Invalid effect encountered:', effect);
+            return;
+        }
+
         switch (effect.type) {
             case 'battlecry':
-                // Handle battlecry effects
+                // Handle effect using description instead of action
+                console.log(`Applying battlecry: ${effect.description}`);
                 break;
             case 'deathrattle':
-                // Handle deathrattle effects
+                // Handle effect using description instead of action
+                console.log(`Applying deathrattle: ${effect.description}`);
                 break;
             case 'aura':
-                // Handle aura effects
+                // Handle effect using description instead of action
+                console.log(`Applying aura: ${effect.description}`);
                 break;
             case 'trigger':
-                // Handle trigger effects
+                // Handle effect using description instead of action
+                console.log(`Applying trigger: ${effect.description}`);
                 break;
         }
     }

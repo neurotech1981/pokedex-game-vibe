@@ -23,6 +23,7 @@ import {
 } from '../utils/soundEffects';
 import { activateAbility } from '../utils/abilities';
 import FloatingCombatText from './FloatingCombatText';
+import TypeAnimation from './TypeAnimation';
 
 // Define AIPersonality type
 type AIPersonality = 'aggressive' | 'defensive' | 'balanced';
@@ -337,33 +338,19 @@ const calculateTypeEffectiveness = (moveType: string, targetTypes: string[], typ
   return effectiveness;
 };
 
-const generateParticles = (type: string, x: number, y: number): Particle[] => {
-  const particles: Particle[] = [];
-  const particleCount = 10;
-  const particleIdCounter = Date.now();
-
-  for (let i = 0; i < particleCount; i++) {
-    particles.push({
-      id: particleIdCounter + i,
-      type,
-      x,
-      y,
-      xOffset: 0,
-      velocityX: (Math.random() - 0.5) * 2,
-      velocityY: (Math.random() - 0.5) * 2,
-      life: 1
-    });
-  }
-
-  return particles;
-};
-
 const selectNextPokemon = (remainingPokemon: Pokemon[], currentPokemon: Pokemon | null): Pokemon | null => {
   if (!remainingPokemon.length) return null;
   if (remainingPokemon.length === 1) return remainingPokemon[0];
   const availablePokemon = remainingPokemon.filter(p => p.id !== currentPokemon?.id);
   return availablePokemon[0] || null;
 };
+
+// Add interface for animation state
+interface TypeAnimationState {
+  type: string;
+  isActive: boolean;
+  position: 'attacker' | 'defender';
+}
 
 const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectiveness }) => {
     // Replace state with ref for battleLogIdCounter
@@ -462,6 +449,56 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     // Add state for music settings
     const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
     const [musicVolume, setMusicVolume] = useState<number>(getMusicVolume());
+
+    // Add animation state
+    const [typeAnimation, setTypeAnimation] = useState({
+        type: '',
+        isActive: false,
+        position: 'attacker' as 'attacker' | 'defender'
+    });
+
+    // Fallback implementation of generateParticles
+    // This is a simpler version that just activates the type animation
+    const generateParticles = (type: string, x: number, y: number): Particle[] => {
+        const particles: Particle[] = [];
+        const particleCount = 10;
+
+        // Use a more unique key generation approach to avoid duplicates
+        const timestamp = Date.now();
+        const randomOffset = Math.floor(Math.random() * 10000);
+        const baseId = timestamp * 1000 + randomOffset;
+
+        // Set type animation
+        setTypeAnimation({
+            type,
+            isActive: true,
+            position: x < 50 ? 'attacker' : 'defender'
+        });
+
+        // Reset animation after delay
+        setTimeout(() => {
+            setTypeAnimation(prev => ({
+                ...prev,
+                isActive: false
+            }));
+        }, 1000);
+
+        // Create minimal particles just to return something
+        for (let i = 0; i < particleCount; i++) {
+            particles.push({
+                id: baseId + i, // Use the unique base ID plus index
+                type,
+                x,
+                y,
+                xOffset: 0,
+                velocityX: (Math.random() - 0.5) * 2,
+                velocityY: (Math.random() - 0.5) * 2,
+                life: 1
+            });
+        }
+
+        return particles;
+    };
 
     // Save selected teams to localStorage when they change
     useEffect(() => {
@@ -668,40 +705,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         };
     };
 
-    // Update generateParticles function to use the state counter
-    const generateParticles = (type: string, x: number, y: number) => {
-        const particleCount = 10;
-        const particles: Particle[] = [];
-
-        for (let i = 0; i < particleCount; i++) {
-            particles.push({
-                id: particleIdCounter + i,
-                type,
-                x,
-                y,
-                xOffset: 0,
-                velocityX: (Math.random() - 0.5) * 2,
-                velocityY: (Math.random() - 0.5) * 2,
-                life: 1
-            });
-        }
-
-        setParticleIdCounter(prev => prev + particleCount);
-
-        setBattleState(prev => ({
-            ...prev,
-            particles: [...prev.particles, ...particles],
-        }));
-
-        // Remove particles after animation
-        setTimeout(() => {
-            setBattleState(prev => ({
-                ...prev,
-                particles: prev.particles.filter(p => p.id > particleIdCounter - particleCount - 1000),
-            }));
-        }, 1000);
-    };
-
     const handleSwapPokemon = (teamNumber: 1 | 2, pokemon: Pokemon) => {
         const newState = { ...battleState };
         if (teamNumber === 1) {
@@ -766,11 +769,37 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             playSound('attack');
         }
 
-        // Generate particles
+        // Ensure animation is triggered with clear sequence
+        console.log(`Initiating attack animation for move type: ${selectedMove.type}`);
+
+        // Clear any existing animation first
+        setTypeAnimation(prev => ({ ...prev, isActive: false }));
+
+        // Short delay to ensure reset
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Set new animation
+        setTypeAnimation({
+            type: selectedMove.type,
+            isActive: true,
+            position: battleState.currentTurn === 1 ? 'attacker' : 'defender'
+        });
+
+        console.log("Animation state set:", {
+            type: selectedMove.type,
+            position: battleState.currentTurn === 1 ? 'attacker' : 'defender'
+        });
+
+        // Generate particles (which will also trigger the type animation)
+        // Note: This is now redundant with direct state setting above, but keeping for consistency
         generateParticles(selectedMove.type, battleState.currentTurn === 1 ? 0 : 100, 50);
 
         // Wait for animation
-        await new Promise(resolve => setTimeout(resolve, 1000 / battleState.battleSpeed));
+        const animationDuration = 1500; // Slightly longer to ensure animation completes
+        console.log(`Waiting ${animationDuration}ms for animation to complete`);
+        await new Promise(resolve => setTimeout(resolve, animationDuration / battleState.battleSpeed));
+
+        console.log("Attack animation complete, calculating damage...");
 
         // Calculate damage
         const damageResult = calculateDamage(attacker, defender, selectedMove);
@@ -1907,52 +1936,52 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                     arrow
                                     placement="right"
                                 >
-                                    <Button
-                                        fullWidth
-                                        onClick={() => handleMoveSelect(move)}
-                                        variant="outlined"
-                                        sx={{
-                                            p: 2,
+                                <Button
+                                    fullWidth
+                                    onClick={() => handleMoveSelect(move)}
+                                    variant="outlined"
+                                    sx={{
+                                        p: 2,
                                             background: `linear-gradient(to right, ${getTypeColor(move.type)}40, rgba(22, 33, 62, 0.8))`,
                                             borderColor: getTypeColor(move.type),
                                             borderWidth: 2,
                                             borderRadius: '12px',
-                                            justifyContent: 'flex-start',
-                                            gap: 2,
+                                        justifyContent: 'flex-start',
+                                        gap: 2,
                                             transition: 'all 0.3s ease',
-                                            '&:hover': {
+                                        '&:hover': {
                                                 background: `linear-gradient(to right, ${getTypeColor(move.type)}60, rgba(22, 33, 62, 0.9))`,
                                                 borderColor: getTypeColor(move.type),
                                                 transform: 'translateY(-2px)',
                                                 boxShadow: `0 5px 15px ${getTypeColor(move.type)}40`
-                                            }
-                                        }}
-                                    >
-                                        <Chip
-                                            label={move.type}
-                                            size="small"
-                                            sx={{
-                                                backgroundColor: getTypeColor(move.type),
-                                                color: 'white',
+                                        }
+                                    }}
+                                >
+                                    <Chip
+                                        label={move.type}
+                                        size="small"
+                                        sx={{
+                                            backgroundColor: getTypeColor(move.type),
+                                            color: 'white',
                                                 minWidth: '80px',
                                                 fontWeight: 'bold',
                                                 textTransform: 'uppercase',
                                                 letterSpacing: '0.5px',
                                                 fontSize: '0.7rem',
-                                            }}
-                                        />
-                                        <Box sx={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'flex-start',
-                                            flex: 1
-                                        }}>
+                                        }}
+                                    />
+                                    <Box sx={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'flex-start',
+                                        flex: 1
+                                    }}>
                                             <Typography variant="subtitle1" sx={{
                                                 color: 'text.primary',
                                                 fontWeight: 'bold'
                                             }}>
-                                                {move.name}
-                                            </Typography>
+                                            {move.name}
+                                        </Typography>
                                             <Box sx={{
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -1960,8 +1989,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                 width: '100%'
                                             }}>
                                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                                    Power: {move.power}
-                                                </Typography>
+                                            Power: {move.power}
+                                        </Typography>
 
                                                 {/* Power bar visualization */}
                                                 <Box sx={{
@@ -2001,8 +2030,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                     />
                                                 )}
                                             </Box>
-                                        </Box>
-                                    </Button>
+                                    </Box>
+                                </Button>
                                 </Tooltip>
                             </Grid>
                         ))}
@@ -2696,6 +2725,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     // And change it to:
     // <Dialog open={isBattleDialogOpen} onClose={handleDialogClose}>
 
+    // Handle animation completion
+    const handleAnimationComplete = () => {
+      setTypeAnimation(prev => ({
+            ...prev,
+        isActive: false
+      }));
+    };
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -2718,21 +2755,21 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             color={soundEnabled ? "primary" : "default"}
                             size="small"
                         >
-                            {soundEnabled ? <VolumeUp /> : <VolumeOff />}
-                        </IconButton>
+                        {soundEnabled ? <VolumeUp /> : <VolumeOff />}
+                    </IconButton>
 
                         <Box sx={{ width: 100 }}>
-                            <Slider
-                                value={volume}
-                                onChange={handleVolumeChange}
-                                min={0}
-                                max={1}
-                                step={0.1}
-                                disabled={!soundEnabled}
+                        <Slider
+                            value={volume}
+                            onChange={handleVolumeChange}
+                            min={0}
+                            max={1}
+                            step={0.1}
+                            disabled={!soundEnabled}
                                 size="small"
-                                valueLabelDisplay="auto"
-                                valueLabelFormat={(value: number) => `${Math.round(value * 100)}%`}
-                            />
+                            valueLabelDisplay="auto"
+                            valueLabelFormat={(value: number) => `${Math.round(value * 100)}%`}
+                        />
                         </Box>
                     </Box>
 
@@ -3291,6 +3328,32 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             {renderTeamOverview(2)}
 
             <AISettings />
+
+            {/* Add type animation with improved positioning */}
+            {battleState.team1Pokemon && battleState.team2Pokemon && typeAnimation.isActive && (
+                <Box
+                    sx={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        zIndex: 9000,
+                        pointerEvents: 'none', // Allow clicking through
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                    }}
+                    className="animation-container"
+                >
+                    <TypeAnimation
+                        type={typeAnimation.type}
+                        isActive={typeAnimation.isActive}
+                        position={typeAnimation.position}
+                        onAnimationComplete={handleAnimationComplete}
+                    />
+                </Box>
+            )}
         </Box>
     );
 };

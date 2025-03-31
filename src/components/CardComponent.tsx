@@ -8,6 +8,7 @@ interface CardComponentProps {
     onClick: () => void;
     isOpponent?: boolean;
     isSelected?: boolean;
+    disabled?: boolean;
 }
 
 const CardContainer = styled(Paper)<{ isOpponent?: boolean; isSelected?: boolean }>(
@@ -129,12 +130,14 @@ const CardComponent: React.FC<CardComponentProps> = ({
     onClick,
     isOpponent,
     isSelected,
+    disabled,
 }) => {
     return (
         <CardContainer
             isOpponent={isOpponent}
             isSelected={isSelected}
-            onClick={onClick}
+            onClick={disabled ? () => {} : onClick}
+            sx={{ opacity: disabled ? 0.7 : 1, cursor: disabled ? 'default' : 'pointer' }}
         >
             <CardCost>{card.cost}</CardCost>
             <CardTypeBadge type={card.type}>{card.type}</CardTypeBadge>

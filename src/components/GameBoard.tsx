@@ -1,12 +1,25 @@
 import React from 'react';
-import { Box, Grid, Paper, Typography } from '@mui/material';
+import { Box, Paper, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { GameState } from '../types/card';
+import { Player, Card } from '../types/card';
 import CardComponent from './CardComponent';
 import Hand from './Hand';
 
+interface ModifiedGameState {
+    players: {
+        player: Player;
+        ai: Player;
+    };
+    currentPlayer: string; // 'player' or 'ai'
+    currentTurn: number;
+    gameOver: boolean;
+    lastPlayedCard?: Card;
+    battleLog: string[];
+    effects: any[];
+}
+
 interface GameBoardProps {
-    gameState: GameState;
+    gameState: ModifiedGameState;
     onCardClick: (action: any) => void;
     onEndTurn: () => void;
     onHeroPower: () => void;
@@ -72,7 +85,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameState, onCardClick, onEndTurn
                     />
                 </HeroSection>
                 <BoardSection>
-                    {opponent.board.map(card => (
+                    {opponent.board.map((card: Card) => (
                         <CardComponent
                             key={card.id}
                             card={card}
@@ -86,7 +99,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameState, onCardClick, onEndTurn
             {/* Player's side */}
             <PlayerBoard>
                 <BoardSection>
-                    {player.board.map(card => (
+                    {player.board.map((card: Card) => (
                         <CardComponent
                             key={card.id}
                             card={card}
@@ -111,7 +124,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameState, onCardClick, onEndTurn
                     <CardComponent
                         card={player.heroPower}
                         onClick={onHeroPower}
-                        disabled={player.heroPowerUsed || player.mana < 2}
+                        disabled={gameState.currentPlayer !== 'player' || player.mana < 2}
                     />
                 </HeroSection>
                 <Hand
