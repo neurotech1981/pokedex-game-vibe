@@ -1,14 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Button, Typography, IconButton, Slider, Paper, Grid, Card, CardContent, CardMedia, Dialog, DialogTitle, DialogContent, DialogActions, Chip, LinearProgress, Stack, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { Box, Button, Typography, IconButton, Slider, Paper, Grid, Card, CardContent, CardMedia, Dialog, DialogTitle, DialogContent, DialogActions, Chip, LinearProgress, Stack, FormControl, InputLabel, Select, MenuItem, Tooltip } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { VolumeUp, VolumeOff, CompareArrows, Close, SwapHoriz } from '@mui/icons-material';
+import { VolumeUp, VolumeOff, CompareArrows, Close, SwapHoriz, MusicNote, MusicOff } from '@mui/icons-material';
 import { keyframes } from '@emotion/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Pokemon, Team, FloatingInfo, Particle, StatusEffect } from '../types/pokemon';
 import type { Ability } from '../types/abilities';
 import { ABILITIES } from '../types/abilities';
 import { selectAIMove, AIDifficulty } from '../utils/battleAI';
-import { playSound, stopAllSounds, setVolume as setSoundVolume, getVolume, preloadSounds } from '../utils/soundEffects';
+import {
+    playSound,
+    stopAllSounds,
+    setVolume as setSoundVolume,
+    getVolume,
+    preloadSounds,
+    playMusic,
+    stopMusic,
+    pauseMusic,
+    resumeMusic,
+    setMusicVolume as setMusicVolumeApi,
+    getMusicVolume
+} from '../utils/soundEffects';
 import { activateAbility } from '../utils/abilities';
 import FloatingCombatText from './FloatingCombatText';
 
@@ -447,6 +459,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         targetId: number;
     }>>([]);
 
+    // Add state for music settings
+    const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
+    const [musicVolume, setMusicVolume] = useState<number>(getMusicVolume());
+
     // Save selected teams to localStorage when they change
     useEffect(() => {
         if (team1) {
@@ -559,12 +575,15 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
     // Handle sound toggle
     const handleSoundToggle = () => {
-        const newEnabled = !soundEnabled;
-        console.log('Sound toggled:', newEnabled);
-        setSoundEnabled(newEnabled);
-        const newVolume = newEnabled ? 0.5 : 0;
-        setVolume(newVolume);
-        setSoundVolume(newVolume);
+        const newSoundEnabled = !soundEnabled;
+        setSoundEnabled(newSoundEnabled);
+        localStorage.setItem('soundEnabled', newSoundEnabled.toString());
+
+        if (!newSoundEnabled) {
+            stopAllSounds();
+        } else if (isBattleDialogOpen) {
+            resumeMusic();
+        }
     };
 
     // Update volume when it changes
@@ -1545,6 +1564,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                         right: 0,
                         bottom: 0,
                         background: 'linear-gradient(180deg, rgba(100, 149, 237, 0.2) 0%, rgba(100, 149, 237, 0.1) 100%)',
+                        backgroundSize: '200% 200%',
+                        backgroundRepeat: 'repeat',
                         backdropFilter: 'blur(2px)',
                         borderRadius: 'inherit'
                     }} />
@@ -1806,6 +1827,24 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             onCancel();
         };
 
+        // Function to calculate accuracy description
+        const getAccuracyDescription = (power: number): string => {
+            if (power < 40) return "High";
+            if (power < 80) return "Medium";
+            return "Low";
+        };
+
+        // Function to generate a move description based on its properties
+        const getMoveDescription = (move: Move): string => {
+            let description = `A ${move.type}-type move with ${move.power > 80 ? "high" : move.power > 40 ? "medium" : "low"} power.`;
+
+            if (move.statusEffect) {
+                description += ` Has a ${Math.round(move.statusEffect.chance * 100)}% chance to ${move.statusEffect.type} the target.`;
+            }
+
+            return description;
+        };
+
         return (
             <Dialog
                 open={true}
@@ -1848,52 +1887,123 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     <Grid container spacing={2} sx={{ mt: 0 }}>
                         {moves.map((move, index) => (
                             <Grid item xs={12} key={index}>
-                                <Button
-                                    fullWidth
-                                    onClick={() => handleMoveSelect(move)}
-                                    variant="outlined"
-                                    sx={{
-                                        p: 2,
-                                        background: 'rgba(74, 144, 226, 0.1)',
-                                        borderColor: 'primary.main',
-                                        justifyContent: 'flex-start',
-                                        gap: 2,
-                                        '&:hover': {
-                                            background: 'rgba(74, 144, 226, 0.2)',
-                                            borderColor: 'primary.light',
-                                        }
-                                    }}
+                                <Tooltip
+                                    title={
+                                        <React.Fragment>
+                                            <Typography variant="subtitle2" color="inherit">{move.name}</Typography>
+                                            <Typography variant="body2">Type: {move.type}</Typography>
+                                            <Typography variant="body2">Power: {move.power}</Typography>
+                                            <Typography variant="body2">Accuracy: {getAccuracyDescription(move.power)}</Typography>
+                                            {move.statusEffect && (
+                                                <Typography variant="body2">
+                                                    Status Effect: {move.statusEffect.type} ({Math.round(move.statusEffect.chance * 100)}% chance)
+                                                </Typography>
+                                            )}
+                                            <Typography variant="body2" sx={{ mt: 1 }}>
+                                                {getMoveDescription(move)}
+                                            </Typography>
+                                        </React.Fragment>
+                                    }
+                                    arrow
+                                    placement="right"
                                 >
-                                    <Chip
-                                        label={move.type}
-                                        size="small"
+                                    <Button
+                                        fullWidth
+                                        onClick={() => handleMoveSelect(move)}
+                                        variant="outlined"
                                         sx={{
-                                            backgroundColor: getTypeColor(move.type),
-                                            color: 'white',
-                                            minWidth: '80px'
+                                            p: 2,
+                                            background: `linear-gradient(to right, ${getTypeColor(move.type)}40, rgba(22, 33, 62, 0.8))`,
+                                            borderColor: getTypeColor(move.type),
+                                            borderWidth: 2,
+                                            borderRadius: '12px',
+                                            justifyContent: 'flex-start',
+                                            gap: 2,
+                                            transition: 'all 0.3s ease',
+                                            '&:hover': {
+                                                background: `linear-gradient(to right, ${getTypeColor(move.type)}60, rgba(22, 33, 62, 0.9))`,
+                                                borderColor: getTypeColor(move.type),
+                                                transform: 'translateY(-2px)',
+                                                boxShadow: `0 5px 15px ${getTypeColor(move.type)}40`
+                                            }
                                         }}
-                                    />
-                                    <Box sx={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-start',
-                                        flex: 1
-                                    }}>
-                                        <Typography variant="subtitle1" sx={{ color: 'text.primary' }}>
-                                            {move.name}
-                                        </Typography>
-                                        <Typography
-                                            variant="caption"
+                                    >
+                                        <Chip
+                                            label={move.type}
+                                            size="small"
                                             sx={{
-                                                color: 'text.secondary',
-                                                display: 'block'
+                                                backgroundColor: getTypeColor(move.type),
+                                                color: 'white',
+                                                minWidth: '80px',
+                                                fontWeight: 'bold',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.5px',
+                                                fontSize: '0.7rem',
                                             }}
-                                        >
-                                            Power: {move.power}
-                                            {move.statusEffect && ` | Status: ${move.statusEffect.type} (${Math.round(move.statusEffect.chance * 100)}%)`}
-                                        </Typography>
-                                    </Box>
-                                </Button>
+                                        />
+                                        <Box sx={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'flex-start',
+                                            flex: 1
+                                        }}>
+                                            <Typography variant="subtitle1" sx={{
+                                                color: 'text.primary',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                {move.name}
+                                            </Typography>
+                                            <Box sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                                width: '100%'
+                                            }}>
+                                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                    Power: {move.power}
+                                                </Typography>
+
+                                                {/* Power bar visualization */}
+                                                <Box sx={{
+                                                    flexGrow: 1,
+                                                    height: '6px',
+                                                    backgroundColor: 'rgba(255,255,255,0.1)',
+                                                    borderRadius: '3px',
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    <Box sx={{
+                                                        width: `${Math.min(100, (move.power / 150) * 100)}%`,
+                                                        height: '100%',
+                                                        backgroundColor: move.power > 80 ? '#ff5252' : move.power > 50 ? '#ffa726' : '#4caf50',
+                                                    }}/>
+                                                </Box>
+
+                                                {move.statusEffect && (
+                                                    <Chip
+                                                        label={move.statusEffect.type}
+                                                        size="small"
+                                                        sx={{
+                                                            height: '20px',
+                                                            fontSize: '0.625rem',
+                                                            backgroundColor: (() => {
+                                                                switch(move.statusEffect.type) {
+                                                                    case 'burn': return '#f44336';
+                                                                    case 'paralysis': return '#ffc107';
+                                                                    case 'freeze': return '#2196f3';
+                                                                    case 'poison': return '#9c27b0';
+                                                                    case 'sleep': return '#9e9e9e';
+                                                                    case 'confusion': return '#7e57c2';
+                                                                    default: return '#9e9e9e';
+                                                                }
+                                                            })(),
+                                                            color: 'white',
+                                                        }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        </Box>
+                                    </Button>
+                                </Tooltip>
                             </Grid>
                         ))}
                     </Grid>
@@ -2029,6 +2139,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
         // Open battle dialog
         setIsBattleDialogOpen(true);
+
+        // Start the battle music
+        if (musicEnabled) {
+            playMusic('battleTheme', true);
+        }
     };
 
     const typeIcons = {
@@ -2513,27 +2628,146 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         }, 1500); // Match the animation duration
     }, [battleState.team1Pokemon, battleState.team2Pokemon]);
 
+    // Add music toggle function
+    const handleMusicToggle = () => {
+        const newMusicEnabled = !musicEnabled;
+        setMusicEnabled(newMusicEnabled);
+        localStorage.setItem('musicEnabled', newMusicEnabled.toString());
+
+        if (!newMusicEnabled) {
+            pauseMusic();
+        } else if (isBattleDialogOpen) {
+            resumeMusic();
+        }
+    };
+
+    // Update the music volume change handler to call the setMusicVolume API function
+    // Add music volume change handler
+    const handleMusicVolumeChange = (_event: Event, newValue: number | number[]) => {
+        const volume = typeof newValue === 'number' ? newValue : newValue[0];
+        setMusicVolume(volume); // Update React state
+        setMusicVolumeApi(volume); // Call the music volume API function
+        localStorage.setItem('musicVolume', volume.toString());
+    };
+
+    // Load sound preferences from localStorage
+    useEffect(() => {
+        // Load sound settings from localStorage
+        const savedSoundEnabled = localStorage.getItem('soundEnabled');
+        if (savedSoundEnabled) {
+            setSoundEnabled(savedSoundEnabled === 'true');
+        }
+
+        const savedVolume = localStorage.getItem('volume');
+        if (savedVolume) {
+            setSoundVolume(parseFloat(savedVolume));
+            setVolume(parseFloat(savedVolume));
+        }
+
+        // Load music settings from localStorage
+        const savedMusicEnabled = localStorage.getItem('musicEnabled');
+        if (savedMusicEnabled) {
+            setMusicEnabled(savedMusicEnabled === 'true');
+        }
+
+        const savedMusicVolume = localStorage.getItem('musicVolume');
+        if (savedMusicVolume) {
+            setMusicVolume(parseFloat(savedMusicVolume));
+        }
+
+        // Preload sounds
+        preloadSounds();
+    }, []);
+
+    // Add code to handle dialog close and stop music
+    // Find the function that handles dialog close (it might be near the Dialog component)
+    // If there's no explicit function, we may need to add one
+
+    // Find where the battle dialog is declared - it should have an onClose handler
+    // Add this to the dialog close handler or make sure it's included
+    const handleDialogClose = () => {
+        stopMusic(); // Stop the battle music
+        setIsBattleDialogOpen(false);
+    };
+
+    // Update the Dialog component to use this handler
+    // Look for something like:
+    // <Dialog open={isBattleDialogOpen} onClose={() => setIsBattleDialogOpen(false)}>
+    // And change it to:
+    // <Dialog open={isBattleDialogOpen} onClose={handleDialogClose}>
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">
                     Battle Simulator
                 </Typography>
-                <Stack direction="row" spacing={2} alignItems="center">
-                    <IconButton onClick={handleSoundToggle} color={soundEnabled ? "primary" : "default"}>
-                        {soundEnabled ? <VolumeUp /> : <VolumeOff />}
-                    </IconButton>
-                    <Box sx={{ width: 200 }}>
-                        <Slider
-                            value={volume}
-                            onChange={handleVolumeChange}
-                            min={0}
-                            max={1}
-                            step={0.1}
-                            disabled={!soundEnabled}
-                            valueLabelDisplay="auto"
-                            valueLabelFormat={(value: number) => `${Math.round(value * 100)}%`}
-                        />
+                <Stack direction="row" spacing={2} alignItems="flex-start">
+                    <Box sx={{
+                        display: 'flex',
+                        gap: 2,
+                        alignItems: 'center',
+                        bgcolor: 'rgba(22, 33, 62, 0.8)',
+                        p: 1,
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'primary.dark'
+                    }}>
+                        <IconButton
+                            onClick={handleSoundToggle}
+                            color={soundEnabled ? "primary" : "default"}
+                            size="small"
+                        >
+                            {soundEnabled ? <VolumeUp /> : <VolumeOff />}
+                        </IconButton>
+
+                        <Box sx={{ width: 100 }}>
+                            <Slider
+                                value={volume}
+                                onChange={handleVolumeChange}
+                                min={0}
+                                max={1}
+                                step={0.1}
+                                disabled={!soundEnabled}
+                                size="small"
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value: number) => `${Math.round(value * 100)}%`}
+                            />
+                        </Box>
+                    </Box>
+
+                    <Box sx={{
+                        display: 'flex',
+                        gap: 2,
+                        alignItems: 'center',
+                        bgcolor: 'rgba(22, 33, 62, 0.8)',
+                        p: 1,
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'secondary.dark'
+                    }}>
+                        <IconButton
+                            onClick={handleMusicToggle}
+                            color={musicEnabled ? "secondary" : "default"}
+                            size="small"
+                        >
+                            {musicEnabled ? <MusicNote /> : <MusicOff />}
+                        </IconButton>
+
+                        <Box sx={{ width: 100 }}>
+                            <Slider
+                                value={musicVolume}
+                                onChange={handleMusicVolumeChange}
+                                min={0}
+                                max={1}
+                                step={0.1}
+                                disabled={!musicEnabled}
+                                size="small"
+                                color="secondary"
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value: number) => `${Math.round(value * 100)}%`}
+                            />
+                        </Box>
                     </Box>
                 </Stack>
             </Box>
@@ -2710,7 +2944,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
             <Dialog
                 open={isBattleDialogOpen}
-                onClose={() => setIsBattleDialogOpen(false)}
+                onClose={handleDialogClose}
                 maxWidth={false}
                 fullScreen
                 PaperProps={{
@@ -2737,7 +2971,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             Battle: {team1?.name} vs {team2?.name}
                         </Typography>
                         <IconButton
-                            onClick={() => setIsBattleDialogOpen(false)}
+                            onClick={handleDialogClose}
                             size="small"
                         sx={{ color: 'primary.light' }}
                         >
@@ -2799,53 +3033,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     }}>
                         <WeatherEffect />
                         <WeatherControls />
-
-                        {/* Debug button for floating text testing */}
-                        <Button
-                            variant="contained"
-                            color="secondary"
-                            onClick={() => {
-                                console.log("Testing floating text");
-                                // Test with team1 pokemon
-                                const team1Pokemon = battleState.team1Pokemon;
-                                if (team1Pokemon !== null) {
-                                    setFloatingTexts(prev => [
-                                        ...prev,
-                                        {
-                                            id: Date.now(),
-                                            text: "Test damage 45!",
-                                            color: "#FF5722",
-                                            type: 'damage',
-                                            position: { x: 200, y: 200 },
-                                            targetId: team1Pokemon.id
-                                        }
-                                    ]);
-                                }
-                                // Test with team2 pokemon
-                                const team2Pokemon = battleState.team2Pokemon;
-                                if (team2Pokemon !== null) {
-                                    setFloatingTexts(prev => [
-                                        ...prev,
-                                        {
-                                            id: Date.now() + 1,
-                                            text: "Super effective!",
-                                            color: "#4CAF50",
-                                            type: 'effectiveness',
-                                            position: { x: 600, y: 200 },
-                                            targetId: team2Pokemon.id
-                                        }
-                                    ]);
-                                }
-                            }}
-                            sx={{
-                                position: 'absolute',
-                                top: 20,
-                                right: 20,
-                                zIndex: 100
-                            }}
-                        >
-                            Test Float Text
-                        </Button>
 
                         {/* Floating combat text */}
                         {floatingTexts.map(text => (
