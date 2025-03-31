@@ -1,30 +1,75 @@
-# React + TypeScript + Vite
+# Pokémon Card Game
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Hearthstone-style card game featuring Pokémon characters and abilities.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Turn-based card game with Pokémon-themed cards
+- Different card types: minions, spells, and hero powers
+- Card effects: battlecry, deathrattle, aura, and trigger effects
+- AI opponent with basic decision-making
+- Beautiful UI with card animations and effects
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+### Prerequisites
 
-- Configure the top-level `parserOptions` property like this:
+- Node.js (v14 or higher)
+- npm or yarn
 
-```js
-export default {
-  // other rules...
-  parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-  },
-}
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/pokemon-card-game.git
+cd pokemon-card-game
 ```
 
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
+
+3. Start the development server:
+```bash
+npm run dev
+# or
+yarn dev
+```
+
+4. Open your browser and navigate to `http://localhost:3000`
+
+## How to Play
+
+1. Each player starts with 30 health and 1 mana crystal
+2. Players draw 3 cards at the start of the game
+3. Each turn:
+   - Draw a card (except for the first player's first turn)
+   - Gain a mana crystal (up to 10)
+   - Play cards by spending mana
+   - Attack with minions
+   - Use hero power
+   - End turn
+
+### Card Types
+
+- **Minions**: Creatures that can attack and defend
+- **Spells**: One-time effects that can target minions or heroes
+- **Hero Powers**: Special abilities that can be used once per turn
+
+### Card Effects
+
+- **Battlecry**: Triggers when the card is played
+- **Deathrattle**: Triggers when the card is destroyed
+- **Aura**: Continuous effect while the card is in play
+- **Trigger**: Effect that activates under specific conditions
+
+## Contributing
+
+Feel free to submit issues and enhancement requests!
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

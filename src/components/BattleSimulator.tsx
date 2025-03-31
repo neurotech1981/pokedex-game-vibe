@@ -27,7 +27,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import { keyframes } from '@emotion/react';
+import { keyframes, css } from '@emotion/react';
 import { playSound, stopAllSounds, setVolume as setSoundVolume, getVolume, preloadSounds } from '../utils/soundEffects';
 import { styled } from '@mui/material/styles';
 import { selectAIMove, AIDifficulty, AIPersonality } from '../utils/battleAI';
@@ -115,6 +115,9 @@ interface Pokemon {
             name: string;
         };
     }[];
+    sprites: {
+        front_default: string;
+    };
 }
 
 interface Team {
@@ -149,6 +152,35 @@ interface StatusEffect {
     type: 'paralysis' | 'sleep' | 'poison' | 'burn' | 'freeze';
     turns: number;
 }
+
+// Add FloatingInfo interface
+interface FloatingInfo {
+    id: number;
+    targetId: number;
+    text: string;
+    color: string;
+    type: 'damage' | 'status' | 'effectiveness';
+}
+
+// Add FloatingText component
+const FloatingText = styled('div')<{ color: string; type: string }>(({ color, type }) => ({
+    position: 'absolute',
+    color: color,
+    fontSize: type === 'damage' ? '1.5rem' : '1.2rem',
+    fontWeight: 'bold',
+    textShadow: `0 0 8px ${color}`,
+    pointerEvents: 'none',
+    animation: `${keyframes`
+        0% {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        100% {
+            transform: translateY(-50px) scale(1.2);
+            opacity: 0;
+        }
+    `} 1.5s ease-out forwards`,
+}));
 
 // Add type for weather effects
 type WeatherType = 'none' | 'rain' | 'sunny' | 'sandstorm' | 'hail';
@@ -358,6 +390,18 @@ const AttackEffect = ({ type, isAttacking }: { type: string; isAttacking: boolea
     );
 };
 
+// Add this function before the BattleSimulator component
+const selectNextPokemon = (remainingPokemon: Pokemon[], currentPokemon: Pokemon | null): Pokemon | null => {
+    if (!remainingPokemon.length) return null;
+
+    // If there's only one Pokémon left, return it
+    if (remainingPokemon.length === 1) return remainingPokemon[0];
+
+    // Filter out the current Pokémon and return the first available one
+    const availablePokemon = remainingPokemon.filter(p => p.id !== currentPokemon?.id);
+    return availablePokemon[0] || null;
+};
+
 const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectiveness }) => {
     // Replace state with ref for battleLogIdCounter
     const battleLogIdCounterRef = useRef(0);
@@ -423,6 +467,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         isTurnTimerActive: true,
         showMoveSelection: false,
     });
+    const [floatingInfos, setFloatingInfos] = useState<FloatingInfo[]>([]);
+    const floatingInfoIdCounterRef = useRef(0);
     const [isBattleDialogOpen, setIsBattleDialogOpen] = useState(false);
     const [showTeamOverview, setShowTeamOverview] = useState<1 | 2 | null>(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
@@ -555,15 +601,18 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     }, [volume]);
 
     // Add status effect damage and restrictions
-    const calculateDamage = (attacker: Pokemon, defender: Pokemon, move: Move): { damage: number; isCritical: boolean } => {
+    const calculateDamage = (attacker: Pokemon, defender: Pokemon, move: Move): { damage: number; isCritical: boolean; effectivenessMultiplier: number; effectivenessText: string } => {
         // Check if attacker is paralyzed (25% chance to not attack)
         if (battleState.statusEffects[attacker.id]?.type === 'paralysis' && Math.random() < 0.25) {
-            return { damage: 0, isCritical: false };
+            return { damage: 0, isCritical: false, effectivenessMultiplier: 1, effectivenessText: 'Paralyzed!' };
         }
 
         // Check if attacker is asleep or frozen
         if (['sleep', 'freeze'].includes(battleState.statusEffects[attacker.id]?.type || '')) {
-            return { damage: 0, isCritical: false };
+            const statusType = battleState.statusEffects[attacker.id]?.type;
+            const statusColor = statusType === 'sleep' ? '#87CEEB' : '#00FFFF';
+            addFloatingInfo(attacker.id, statusType === 'sleep' ? 'Asleep!' : 'Frozen!', statusColor, 'status');
+            return { damage: 0, isCritical: false, effectivenessMultiplier: 1, effectivenessText: statusType === 'sleep' ? 'Asleep!' : 'Frozen!' };
         }
 
         // Base damage calculation using move power and stats
@@ -614,9 +663,17 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         // Apply random factor (85-100%)
         const randomFactor = 0.85 + (Math.random() * 0.15);
 
+        // Determine effectiveness text
+        let effectivenessText = '';
+        if (typeMultiplier > 1) effectivenessText = 'Super effective!';
+        else if (typeMultiplier < 1 && typeMultiplier > 0) effectivenessText = 'Not very effective...';
+        else if (typeMultiplier === 0) effectivenessText = 'No effect!';
+
         return {
             damage: Math.max(1, Math.round(baseDamage * typeMultiplier * randomFactor)),
-            isCritical
+            isCritical,
+            effectivenessMultiplier: typeMultiplier,
+            effectivenessText
         };
     };
 
@@ -709,7 +766,15 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         await new Promise(resolve => setTimeout(resolve, 1000 / battleState.battleSpeed));
 
         // Calculate damage
-        const { damage, isCritical } = calculateDamage(attacker, defender, move);
+        const { damage, isCritical, effectivenessMultiplier, effectivenessText } = calculateDamage(attacker, defender, move);
+
+        // Show effectiveness text
+        if (effectivenessText && effectivenessText !== 'Paralyzed!' && effectivenessText !== 'Asleep!' && effectivenessText !== 'Frozen!') {
+            let color = '#FFFFFF';
+            if (effectivenessMultiplier > 1) color = '#4CAF50'; // Green for super effective
+            else if (effectivenessMultiplier < 1) color = '#FFA726'; // Orange for not very effective
+            addFloatingInfo(attacker.id, effectivenessText, color, 'effectiveness');
+        }
 
         // Apply damage and update state
         setBattleState(prev => {
@@ -727,8 +792,35 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             if (isCritical) message += ' Critical hit!';
             if (damage > 0) {
                 message += ` <span class="damage-text">(-${damage} HP)</span>`;
+                addFloatingInfo(defender.id, `-${damage}`, '#f44336', 'damage');
             }
-            if (newHealth === 0) message += `\n${defender.name} fainted!`;
+            if (newHealth === 0) {
+                message += `\n${defender.name} fainted!`;
+
+                // Handle Pokémon switching for AI when their Pokémon faints
+                if (prev.currentTurn === 2) {
+                    const remainingPokemon = prev.team2RemainingPokemon.filter(p => p.id !== defender.id);
+                    const nextPokemon = selectNextPokemon(remainingPokemon, defender);
+
+                    if (nextPokemon) {
+                        message += `\nGo, ${nextPokemon.name}!`;
+                        return {
+                            ...prev,
+                            team1Health: prev.team1Health, // Remove conditional since we know it's team 2's turn
+                            team2Health: updatedHealth,    // Remove conditional since we know it's team 2's turn
+                            lastDamage: damage,
+                            criticalHit: isCritical,
+                            battleLog: [addBattleLogEntry(message, 'death'), ...prev.battleLog],
+                            isAttackAnimating: false,
+                            currentTurn: 1,
+                            selectedMove: null,
+                            isTurnTimerActive: true,
+                            team2Pokemon: nextPokemon,
+                            team2RemainingPokemon: remainingPokemon
+                        };
+                    }
+                }
+            }
 
             return {
                 ...prev,
@@ -984,21 +1076,37 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                     image={pokemon.image}
                                     alt={pokemon.name}
                                     sx={{
-                                width: '85%',
-                                height: '85%',
+                                        width: '100%',
+                                        height: '100%',
                                         objectFit: 'contain',
-                                filter: health === 0
-                                    ? 'grayscale(100%) brightness(0.7)'
-                                    : 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.3))',
-                                transform: 'scale(1.1)',
-                                transition: 'all 0.3s ease-in-out',
-                                animation: isCurrentTurn ? 'float 3s ease-in-out infinite' : 'none',
-                                '@keyframes float': {
-                                    '0%, 100%': { transform: 'translateY(0) scale(1.1)' },
-                                    '50%': { transform: 'translateY(-5px) scale(1.1)' }
-                                }
+                                        filter: health === 0
+                                            ? 'grayscale(100%) brightness(0.7)'
+                                            : 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.3))',
+                                        transform: 'scale(1.1)',
+                                        transition: 'all 0.3s ease-in-out',
+                                        animation: isCurrentTurn ? 'float 3s ease-in-out infinite' : 'none',
+                                        '@keyframes float': {
+                                            '0%, 100%': { transform: 'translateY(0) scale(1.1)' },
+                                            '50%': { transform: 'translateY(-5px) scale(1.1)' }
+                                        }
                                     }}
                                 />
+                                {floatingInfos
+                                    .filter(info => info.targetId === pokemon.id)
+                                    .map(info => (
+                                        <FloatingText
+                                            key={info.id}
+                                            color={info.color}
+                                            type={info.type}
+                                            style={{
+                                                left: '50%',
+                                                top: '50%',
+                                                transform: 'translate(-50%, -50%)'
+                                            }}
+                                        >
+                                            {info.text}
+                                        </FloatingText>
+                                    ))}
                                 {battleState.statusEffects[pokemon.id] && (
                                     <StatusEffect
                                         type={battleState.statusEffects[pokemon.id].type}
@@ -1895,6 +2003,28 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             console.log('AI turn starting...'); // Debug log
             const timer = setTimeout(async () => {
                 try {
+                    // Check if current AI Pokémon has fainted
+                    const currentPokemon = battleState.team2Pokemon;
+                    if (currentPokemon) {
+                        const currentPokemonHealth = battleState.team2Health[currentPokemon.id];
+                        if (currentPokemonHealth === 0) {
+                            const remainingPokemon = battleState.team2RemainingPokemon.filter(p => p.id !== currentPokemon.id);
+                            const nextPokemon = selectNextPokemon(remainingPokemon, currentPokemon);
+
+                            if (nextPokemon) {
+                                setBattleState(prev => ({
+                                    ...prev,
+                                    team2Pokemon: nextPokemon,
+                                    team2RemainingPokemon: remainingPokemon,
+                                    battleLog: [addBattleLogEntry(`Go, ${nextPokemon.name}!`, 'normal'), ...prev.battleLog],
+                                    currentTurn: 1,
+                                    isTurnTimerActive: true
+                                }));
+                                return;
+                            }
+                        }
+                    }
+
                     const aiMove = selectAIMove(battleState, typeEffectiveness, aiDifficulty, aiPersonality);
                     console.log('AI selected move:', aiMove.name); // Debug log
 
@@ -1972,7 +2102,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     }
                 } catch (error) {
                     console.error('AI move selection error:', error);
-                    // If AI fails to select a move, end its turn
                     setBattleState(prev => ({
                         ...prev,
                         currentTurn: 1,
@@ -1989,6 +2118,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         battleState.team1Pokemon,
         battleState.team2Pokemon,
         battleState.selectedMove,
+        battleState.team2Health,
+        battleState.team2RemainingPokemon,
         aiDifficulty,
         aiPersonality
     ]);
@@ -2034,6 +2165,19 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             </FormControl>
         </Box>
     );
+
+    // Function to add floating info text
+    const addFloatingInfo = useCallback((targetId: number, text: string, color: string, type: 'damage' | 'status' | 'effectiveness') => {
+        const newId = floatingInfoIdCounterRef.current++;
+        const newInfo: FloatingInfo = { id: newId, targetId, text, color, type };
+
+        setFloatingInfos(prev => [...prev, newInfo]);
+
+        // Remove the info after animation duration (1.5s)
+        setTimeout(() => {
+            setFloatingInfos(prev => prev.filter(info => info.id !== newId));
+        }, 1500);
+    }, []);
 
     return (
         <Box>
