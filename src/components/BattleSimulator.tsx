@@ -21,51 +21,11 @@ import {
     setMusicVolume as setMusicVolumeApi,
     getMusicVolume
 } from '../utils/soundEffects';
-import { activateAbility } from '../utils/abilities';
 import FloatingCombatText from './FloatingCombatText';
 import TypeAnimation from './TypeAnimation';
 
 // Define AIPersonality type
 type AIPersonality = 'aggressive' | 'defensive' | 'balanced';
-
-// Define animations
-const screenFlash = keyframes`
-    0% { opacity: 0.8; }
-    50% { opacity: 0.4; }
-    100% { opacity: 0; }
-`;
-
-const damage = keyframes`
-    0% { transform: translateX(0); }
-    25% { transform: translateX(-10px); }
-    75% { transform: translateX(10px); }
-    100% { transform: translateX(0); }
-`;
-
-const attack = keyframes`
-    0% { transform: translateX(0); }
-    50% { transform: translateX(20px); }
-    100% { transform: translateX(0); }
-`;
-
-const victory = keyframes`
-    0% { transform: scale(1); }
-    50% { transform: scale(1.2); }
-    100% { transform: scale(1); }
-`;
-
-const ScreenFlashOverlay = styled('div')({
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'white',
-    opacity: 0,
-    pointerEvents: 'none',
-    animation: `${screenFlash} 0.5s ease-out`,
-    zIndex: 9999
-});
 
 const WeatherOverlay = styled('div')({
     position: 'absolute',
@@ -104,27 +64,6 @@ interface Props {
         };
     };
 }
-
-// Add FloatingText component
-// const FloatingText = styled('div')({
-//     position: 'absolute',
-//     color: 'white',
-//     fontSize: '24px',
-//     fontWeight: 'bold',
-//     textShadow: '0 0 8px rgba(0, 0, 0, 0.8)',
-//     pointerEvents: 'none',
-//     zIndex: 1000,
-//     animation: `${keyframes`
-//         0% {
-//             transform: translateY(0);
-//             opacity: 1;
-//         }
-//         100% {
-//             transform: translateY(-50px);
-//             opacity: 0;
-//         }
-//     `} 1.5s ease-out forwards`,
-// });
 
 // Add type for weather effects
 type WeatherType = 'none' | 'rain' | 'sunny' | 'sandstorm' | 'hail';
@@ -298,12 +237,6 @@ const pokemonVariants = {
     }
 };
 
-const attackEffectVariants = {
-    initial: { opacity: 0, scale: 0.5 },
-    animate: { opacity: 1, scale: 1.2, transition: { duration: 0.3 } },
-    exit: { opacity: 0, scale: 0.5, transition: { duration: 0.2 } }
-};
-
 // Create animated components
 const AnimatedPokemon = styled(motion.div)({
     position: 'relative',
@@ -312,15 +245,6 @@ const AnimatedPokemon = styled(motion.div)({
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center'
-});
-
-const AttackEffect = styled(motion.div)({
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    pointerEvents: 'none',
 });
 
 // Remove imports for missing utilities and define them locally
@@ -345,18 +269,7 @@ const selectNextPokemon = (remainingPokemon: Pokemon[], currentPokemon: Pokemon 
   return availablePokemon[0] || null;
 };
 
-// Add interface for animation state
-interface TypeAnimationState {
-  type: string;
-  isActive: boolean;
-  position: 'attacker' | 'defender';
-}
-
 const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectiveness }) => {
-    // Replace state with ref for battleLogIdCounter
-    const battleLogIdCounterRef = useRef(0);
-    const [particleIdCounter, setParticleIdCounter] = useState(0);
-
     // Define addBattleLogEntry with useCallback
     const addBattleLogEntry = useCallback((message: string, type: 'normal' | 'critical' | 'death' | 'victory' = 'normal') => {
         // Add type icons to the message if it contains type information
@@ -2608,12 +2521,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         initial: { opacity: 0, scale: 0.5 },
         animate: { opacity: 1, scale: 1.2, transition: { duration: 0.3 } },
         exit: { opacity: 0, scale: 0.5, transition: { duration: 0.2 } }
-    };
-
-    // Helper function to convert local BattleState to imported BattleState type when needed
-    const convertBattleState = (state: BattleState): any => {
-        // Create a compatible object by mapping the properties
-        return state;
     };
 
     // Create a wrapper function to handle the type compatibility issues
