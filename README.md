@@ -1,14 +1,64 @@
-# Pokémon Card Game
+# Pokémon Battle Game
 
-A Hearthstone-style card game featuring Pokémon characters and abilities.
+A fun Pokémon battle game built with React, TypeScript, and Material-UI.
 
 ## Features
 
-- Turn-based card game with Pokémon-themed cards
-- Different card types: minions, spells, and hero powers
-- Card effects: battlecry, deathrattle, aura, and trigger effects
-- AI opponent with basic decision-making
-- Beautiful UI with card animations and effects
+- Team building with Pokémon selection
+- Turn-based battle system
+- Type effectiveness calculations
+- Status effects and weather conditions
+- Battle animations and visual effects
+- Sound effects and background music
+- Battle statistics tracking
+
+## Development
+
+To run the project locally:
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+## Deployment
+
+This project is deployed on GitHub Pages. To deploy:
+
+1. Make sure you have the gh-pages package installed:
+```bash
+npm install --save-dev gh-pages
+```
+
+2. Deploy to GitHub Pages:
+```bash
+npm run deploy
+```
+
+3. Go to your repository settings on GitHub:
+   - Navigate to Settings > Pages
+   - Under "Source", select the "gh-pages" branch
+   - Save the changes
+
+Your site will be available at: `https://[your-username].github.io/pokedex-game-vibe/`
+
+## Technologies Used
+
+- React
+- TypeScript
+- Vite
+- Material-UI
+- Framer Motion
+- Emotion (for styled components)
 
 ## Getting Started
 
