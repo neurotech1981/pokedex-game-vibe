@@ -40,6 +40,7 @@ import TypeEffectiveness from './TypeEffectiveness';
 import TeamBuilder from './TeamBuilder';
 import BattleSimulator from './BattleSimulator';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import type { QueryFunctionContext } from '@tanstack/react-query';
 import { useDebounce } from 'use-debounce';
 
 interface PokemonStat {
@@ -263,8 +264,9 @@ const fetchPokemonDetails = async (id: number) => {
     };
 };
 
-const fetchPokemonList = async ({ pageParam = 1 }) => {
-    const limit = 20; // Reduced from 151 to 20 for better performance
+const fetchPokemonList = async (context: QueryFunctionContext) => {
+    const pageParam = (context.pageParam as number | undefined) ?? 1;
+    const limit = 20;
     const offset = (pageParam - 1) * limit;
     const response = await fetch(`https://pokeapi.co/api/v2/pokemon?limit=${limit}&offset=${offset}`);
     const data = await response.json();
@@ -367,7 +369,7 @@ const Pokemon: React.FC = () => {
         isError,
     } = useInfiniteQuery({
         queryKey: ['pokemons', debouncedSearchTerm, selectedType],
-        queryFn: fetchPokemonList,
+        queryFn: (context) => fetchPokemonList(context),
         getNextPageParam: (lastPage) => lastPage.nextPage,
         initialPageParam: 1,
         maxPages: 10, // Limit the number of pages to prevent excessive data loading
@@ -861,7 +863,7 @@ const Pokemon: React.FC = () => {
                         {pokemonForms.length > 0 ? (
                             <Grid container spacing={2}>
                                 {pokemonForms.map((form) => (
-                                    <Grid item xs={6} sm={4} md={3} key={`${selectedPokemon?.id}-${form.name}`}>
+                                    <Grid size={{ xs: 6, sm: 4, md: 3 }} key={`${selectedPokemon?.id}-${form.name}`}>
                                         <Card sx={{
                                             height: '100%',
                                             display: 'flex',
@@ -1288,11 +1290,7 @@ const Pokemon: React.FC = () => {
                     <Grid container spacing={3}>
                         {filteredPokemons.map((pokemon, index) => (
                             <Grid
-                                item
-                                xs={12}
-                                sm={6}
-                                md={4}
-                                lg={3}
+                                size={{ xs: 12, sm: 6, md: 4, lg: 3 }}
                                 key={`pokemon-${pokemon.id}-${index}`}
                                 ref={index === filteredPokemons.length - 1 ? lastPokemonRef : undefined}
                             >

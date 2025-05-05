@@ -426,10 +426,10 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
             </Box>
 
             <Grid container spacing={3}>
-                <Grid item xs={12} md={8}>
+                <Grid size={{ xs: 12, md: 8 }}>
                     <Grid container spacing={3}>
                         {teams.map(team => (
-                            <Grid item xs={12} key={team.id}>
+                            <Grid size={12} key={team.id}>
                                 <Card
                                     sx={{
                                         height: '100%',
@@ -470,7 +470,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
 
                                         <Grid container spacing={1}>
                                             {team.pokemon.map(pokemon => (
-                                                <Grid item xs={4} sm={2} key={pokemon.id}>
+                                                <Grid size={{ xs: 4, sm: 2 }} key={pokemon.id}>
                                                     <Card
                                                         sx={{
                                                             position: 'relative',
@@ -536,7 +536,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                 </Grid>
                                             ))}
                                             {Array.from({ length: MAX_TEAM_SIZE - team.pokemon.length }).map((_, index) => (
-                                                <Grid item xs={4} sm={2} key={`empty-${index}`}>
+                                                <Grid size={{ xs: 4, sm: 2 }} key={`empty-${index}`}>
                                                     <Card
                                                         sx={{
                                                             height: '100%',
@@ -607,7 +607,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                         ))}
                     </Grid>
                 </Grid>
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
                         <Typography variant="h6" gutterBottom>
                             Available Pokémon
@@ -660,7 +660,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                         <Box sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
                             <Grid container spacing={1}>
                                 {filteredPokemons.map(pokemon => (
-                                    <Grid item xs={4} sm={3} md={6} key={pokemon.id}>
+                                    <Grid size={{ xs: 4, sm: 3, md: 6 }} key={pokemon.id}>
                                         <Card
                                             draggable
                                             onDragStart={() => handleDragStart(pokemon)}

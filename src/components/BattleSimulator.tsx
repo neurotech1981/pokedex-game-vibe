@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Button, Typography, IconButton, Slider, Paper, Grid, Card, CardContent, CardMedia, Dialog, DialogTitle, DialogContent, DialogActions, Chip, LinearProgress, Stack, FormControl, InputLabel, Select, MenuItem, Tooltip } from '@mui/material';
+import { Box, Button, Typography, IconButton, Slider, Paper, Card, CardContent, CardMedia, Dialog, DialogTitle, DialogContent, DialogActions, Chip, LinearProgress, Stack, FormControl, InputLabel, Select, MenuItem, Tooltip } from '@mui/material';
+import Grid from '@mui/material/Grid';
 import { styled } from '@mui/material/styles';
 import { VolumeUp, VolumeOff, CompareArrows, Close, SwapHoriz, MusicNote, MusicOff } from '@mui/icons-material';
 import { keyframes } from '@emotion/react';
@@ -23,6 +24,7 @@ import {
 } from '../utils/soundEffects';
 import FloatingCombatText from './FloatingCombatText';
 import TypeAnimation from './TypeAnimation';
+import { Key } from 'react';
 
 // Define AIPersonality type
 type AIPersonality = 'aggressive' | 'defensive' | 'balanced';
@@ -151,17 +153,17 @@ const MOVES: { [key: string]: Move[] } = {
 interface BattleState {
     team1Pokemon: Pokemon | null;
     team2Pokemon: Pokemon | null;
-    team1Health: { [key: number]: number };
-    team2Health: { [key: number]: number };
-    team1Levels: { [key: number]: number };  // Add this
-    team2Levels: { [key: number]: number };  // Add this
+    team1Health: { [key: string]: number };
+    team2Health: { [key: string]: number };
+    team1Levels: { [key: string]: number };
+    team2Levels: { [key: string]: number };
     currentTurn: 1 | 2;
     battleLog: Array<{
         id: number;
         message: string;
         type: 'normal' | 'critical' | 'death' | 'victory';
         timestamp: number;
-    }>;
+    } | null>;
     team1RemainingPokemon: Pokemon[];
     team2RemainingPokemon: Pokemon[];
     isAttackAnimating: boolean;
@@ -176,7 +178,7 @@ interface BattleState {
     } | null;
     weather: WeatherType;
     statusEffects: {
-        [key: number]: StatusEffect;
+        [key: string]: StatusEffect;
     };
     showScreenFlash: boolean;
     particles: Particle[];
@@ -202,7 +204,7 @@ interface BattleState {
     isTurnTimerActive: boolean;
     showMoveSelection: boolean;
     activeAbilities: {
-        [key: number]: {
+        [key: string]: {
             ability: Ability;
             isActive: boolean;
         };
@@ -291,7 +293,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         if (savedTeam1) {
             const parsedTeam = JSON.parse(savedTeam1);
             // Find the team in current teams array to ensure it exists
-            return teams.find(t => t.id === parsedTeam.id) || null;
+            return teams.find((t: { id: any; }) => t.id === parsedTeam.id) || null;
         }
         return null;
     });
@@ -300,7 +302,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         if (savedTeam2) {
             const parsedTeam = JSON.parse(savedTeam2);
             // Find the team in current teams array to ensure it exists
-            return teams.find(t => t.id === parsedTeam.id) || null;
+            return teams.find((t: { id: any; }) => t.id === parsedTeam.id) || null;
         }
         return null;
     });
@@ -309,8 +311,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         team2Pokemon: null,
         team1Health: {},
         team2Health: {},
-        team1Levels: {},  // Add this
-        team2Levels: {},  // Add this
+        team1Levels: {},
+        team2Levels: {},
         currentTurn: 1,
         battleLog: [addBattleLogEntry('Battle started!', 'normal')],
         team1RemainingPokemon: [],
@@ -390,7 +392,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
         // Reset animation after delay
         setTimeout(() => {
-            setTypeAnimation(prev => ({
+            setTypeAnimation((prev) => ({
                 ...prev,
                 isActive: false
             }));
@@ -432,10 +434,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
     // Clear selected teams if they no longer exist in the teams array
     useEffect(() => {
-        if (team1 && !teams.some(t => t.id === team1.id)) {
+        if (team1 && !teams.some((t: { id: any; }) => t.id === team1.id)) {
             setTeam1(null);
         }
-        if (team2 && !teams.some(t => t.id === team2.id)) {
+        if (team2 && !teams.some((t: { id: any; }) => t.id === team2.id)) {
             setTeam2(null);
         }
     }, [team1, team2, teams]);
@@ -443,14 +445,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     // Reset battle state when teams change
     useEffect(() => {
         if (team1 && team2) {
-            const team1Health: { [key: number]: number } = {};
-            const team2Health: { [key: number]: number } = {};
+            const team1Health: { [key: string]: number } = {};
+            const team2Health: { [key: string]: number } = {};
 
-            team1.pokemon.forEach(pokemon => {
-                team1Health[pokemon.id] = 100;
+            team1.pokemon.forEach((pokemon: { id: string | number; }) => {
+                team1Health[String(pokemon.id)] = 100; // Cast id to string
             });
-            team2.pokemon.forEach(pokemon => {
-                team2Health[pokemon.id] = 100;
+            team2.pokemon.forEach((pokemon: { id: string | number; }) => {
+                team2Health[String(pokemon.id)] = 100; // Cast id to string
             });
 
             setBattleState({
@@ -458,8 +460,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 team2Pokemon: team2.pokemon[0] || null,
                 team1Health,
                 team2Health,
-                team1Levels: {},  // Add this
-                team2Levels: {},  // Add this
+                team1Levels: {},
+                team2Levels: {},
                 currentTurn: 1,
                 battleLog: [addBattleLogEntry('Battle started!', 'normal')],
                 team1RemainingPokemon: [...team1.pokemon],
@@ -675,7 +677,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         }
 
         // Start attack animation
-        setBattleState(prev => ({ ...prev, isAttackAnimating: true }));
+        setBattleState((prev) => ({ ...prev, isAttackAnimating: true }));
 
         // Play attack sound
         if (soundEnabled) {
@@ -686,7 +688,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         console.log(`Initiating attack animation for move type: ${selectedMove.type}`);
 
         // Clear any existing animation first
-        setTypeAnimation(prev => ({ ...prev, isActive: false }));
+        setTypeAnimation((prev) => ({ ...prev, isActive: false }));
 
         // Short delay to ensure reset
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -727,25 +729,28 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         }
 
         // Apply damage and update state
-        setBattleState(prev => {
+        setBattleState((prev) => {
             const defenderHealth = prev.currentTurn === 1
-                ? prev.team2Health[defender.id]
-                : prev.team1Health[defender.id];
+                ? prev.team2Health[String(defender.id)] // Cast id to string
+                : prev.team1Health[String(defender.id)]; // Cast id to string
 
             const newHealth = Math.max(0, defenderHealth - damage);
 
             const updatedHealth = prev.currentTurn === 1
-                ? { ...prev.team2Health, [defender.id]: newHealth }
-                : { ...prev.team1Health, [defender.id]: newHealth };
+                ? { ...prev.team2Health, [String(defender.id)]: newHealth } // Cast id to string
+                : { ...prev.team1Health, [String(defender.id)]: newHealth }; // Cast id to string
 
-            // Update battle statistics
+            // Update battle statistics correctly
+            const currentTeamKey = prev.currentTurn === 1 ? 'team1' : 'team2';
             const updatedStats = {
                 ...prev.battleStats,
-                [prev.currentTurn === 1 ? 'team1' : 'team2']: {
-                    ...prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'],
-                    damageDealt: prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'].damageDealt + damage,
-                    criticalHits: prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'].criticalHits + (damageResult.isCritical ? 1 : 0),
-                    turnsTaken: prev.battleStats[prev.currentTurn === 1 ? 'team1' : 'team2'].turnsTaken + 1
+                [currentTeamKey]: {
+                    ...prev.battleStats[currentTeamKey],
+                    damageDealt: prev.battleStats[currentTeamKey].damageDealt + damage,
+                    criticalHits: prev.battleStats[currentTeamKey].criticalHits + (damageResult.isCritical ? 1 : 0),
+                    turnsTaken: prev.battleStats[currentTeamKey].turnsTaken + 1,
+                    // Make sure statusEffectsApplied exists here if it's used later
+                    statusEffectsApplied: prev.battleStats[currentTeamKey].statusEffectsApplied + ((selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance) ? 1 : 0)
                 }
             };
 
@@ -757,11 +762,18 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             }
 
             // Apply status effect if the move has one
+            let newStatusEffects = prev.statusEffects;
             if (selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance) {
                 message += `\n${defender.name} was ${selectedMove.statusEffect.type}ed!`;
                 addFloatingInfo(defender.id, `${selectedMove.statusEffect.type}ed!`, '#FFA726', 'status');
-                // Update status effects applied count
-                updatedStats[prev.currentTurn === 1 ? 'team1' : 'team2'].statusEffectsApplied++;
+                // Don't update stats count here, it was done above
+                newStatusEffects = {
+                    ...prev.statusEffects,
+                    [String(defender.id)]: { // Cast id to string
+                        type: selectedMove.statusEffect!.type,
+                        turns: 3
+                    }
+                };
             }
 
             if (newHealth === 0) {
@@ -774,7 +786,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
                 // Handle Pokémon switching for AI when their Pokémon faints
                 if (prev.currentTurn === 2) {
-                    const remainingPokemon = prev.team2RemainingPokemon.filter(p => p.id !== defender.id);
+                    const remainingPokemon = prev.team2RemainingPokemon.filter((p: { id: any; }) => p.id !== defender.id);
                     const nextPokemon = selectNextPokemon(remainingPokemon, defender);
 
                     if (nextPokemon) {
@@ -792,15 +804,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             isTurnTimerActive: true,
                             team2Pokemon: nextPokemon,
                             team2RemainingPokemon: remainingPokemon,
-                            statusEffects: selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance
-                                ? {
-                                    ...prev.statusEffects,
-                                    [defender.id]: {
-                                        type: selectedMove.statusEffect!.type,
-                                        turns: 3
-                                    }
-                                }
-                                : prev.statusEffects
+                            statusEffects: newStatusEffects, // Use updated status effects
+                            battleStats: updatedStats // Use updated stats
                         };
                     }
                 }
@@ -810,7 +815,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 ...prev,
                 team1Health: prev.currentTurn === 1 ? prev.team1Health : updatedHealth,
                 team2Health: prev.currentTurn === 1 ? updatedHealth : prev.team2Health,
-                battleStats: updatedStats,
+                battleStats: updatedStats, // Use updated stats
                 battleLog: [addBattleLogEntry(message, damageResult.isCritical ? 'critical' : 'normal'), ...prev.battleLog],
                 lastDamage: damage,
                 criticalHit: damageResult.isCritical,
@@ -823,32 +828,26 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 currentTurn: prev.currentTurn === 1 ? 2 : 1,
                 selectedMove: null,
                 isTurnTimerActive: true,
-                statusEffects: selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance
-                    ? {
-                        ...prev.statusEffects,
-                        [defender.id]: {
-                            type: selectedMove.statusEffect!.type,
-                            turns: 3
-                        }
-                    }
-                    : prev.statusEffects
+                statusEffects: newStatusEffects // Use updated status effects
             };
         });
 
-        // Check for game over
-        const { isOver, winner } = checkGameOver(battleState);
-        if (isOver) {
-            if (soundEnabled) {
-                playSound('victory');
+        // Check for game over state AFTER the state update that applies damage
+        setBattleState(prev => {
+            const { isOver, winner } = checkGameOver(prev);
+            if (isOver && !prev.gameOver) { // Only update if game wasn't already over
+                if (soundEnabled) {
+                    playSound('victory');
+                }
+                return {
+                    ...prev,
+                    gameOver: true,
+                    winner,
+                    battleLog: [addBattleLogEntry(`Team ${winner} wins the battle!`, 'victory'), ...prev.battleLog]
+                };
             }
-
-            setBattleState(prev => ({
-                ...prev,
-                gameOver: true,
-                winner,
-                battleLog: [addBattleLogEntry(`Team ${winner} wins the battle!`, 'victory'), ...prev.battleLog]
-            }));
-        }
+            return prev; // Return previous state if game is not over
+        });
 
         // Activate abilities before attack
         if (battleState.currentTurn === 1 && battleState.team1Pokemon) {
@@ -859,11 +858,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
         // Apply status effect if the move has one
         if (selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance) {
-            setBattleState(prev => ({
+            setBattleState((prev) => ({
                 ...prev,
                 statusEffects: {
                     ...prev.statusEffects,
-                    [defender.id]: {
+                    [String(defender.id)]: { // Cast id to string
                         type: selectedMove.statusEffect!.type,
                         turns: 3
                     }
@@ -917,7 +916,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
         return (
             <Card sx={{
-                    position: 'relative',
+                position: 'relative',
                 height: '100%',
                 minHeight: '300px',
                 display: 'flex',
@@ -1339,12 +1338,12 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     </IconButton>
                 </DialogTitle>
                 <DialogContent>
-                    <Grid container spacing={2}>
-                        {team.pokemon.map(pokemon => (
-                            <Grid item xs={12} key={pokemon.id}>
+                    <Grid container spacing={2} sx={{ width: '100%' }}> {/* Added width */}
+                        {team.pokemon.map((pokemon: Pokemon) => (
+                            <Grid size={12} key={pokemon.id}> {/* Removed item, updated size prop */}
                                 <Card
                                     sx={{
-                                        opacity: remainingPokemon.some(p => p.id === pokemon.id) ? 1 : 0.5,
+                                        opacity: remainingPokemon.some((p: { id: any; }) => p.id === pokemon.id) ? 1 : 0.5,
                                         border: currentPokemon?.id === pokemon.id ? '2px solid primary.main' : undefined,
                                     }}
                                 >
@@ -1361,7 +1360,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                     {pokemon.name}
                                                 </Typography>
                                                 <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
-                                                    {pokemon.types.map(type => (
+                                                    {pokemon.types.map((type: any) => (
                                                         <Chip
                                                             key={type}
                                                             label={type}
@@ -1390,7 +1389,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                     }}
                                                 />
                                             </Box>
-                                            {remainingPokemon.some(p => p.id === pokemon.id) &&
+                                            {remainingPokemon.some((p: { id: any; }) => p.id === pokemon.id) &&
                                                 currentPokemon?.id !== pokemon.id && (
                                                     <Button
                                                         variant="contained"
@@ -1681,7 +1680,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
     // Update changeWeather to use useCallback
     const changeWeather = useCallback((weather: WeatherType) => {
-        setBattleState(prev => ({
+        setBattleState((prev) => ({
             ...prev,
             weather,
             weatherTurns: weather === 'none' ? 0 : 5,
@@ -1719,7 +1718,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         let timer: ReturnType<typeof setInterval>;
         if (battleState.isTurnTimerActive && !battleState.gameOver && !battleState.showMoveSelection) {
             timer = setInterval(() => {
-                setBattleState(prev => {
+                setBattleState((prev) => {
                     if (prev.turnTimer <= 0) {
                         return {
                             ...prev,
@@ -1743,7 +1742,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         if (battleState.selectedMove) {
             handleAttack(battleState.selectedMove);
         } else {
-            setBattleState(prev => ({
+            setBattleState((prev) => ({
                 ...prev,
                 showMoveSelection: true
             }));
@@ -1826,9 +1825,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     </Box>
                 </DialogTitle>
                 <DialogContent sx={{ p: 2 }}>
-                    <Grid container spacing={2} sx={{ mt: 0 }}>
+                    <Grid container spacing={2} sx={{ mt: 0, width: '100%' }}> {/* Added width */}
                         {moves.map((move, index) => (
-                            <Grid item xs={12} key={index}>
+                            <Grid size={12} key={index}> {/* Removed item, updated size prop */}
                                 <Tooltip
                                     title={
                                         <React.Fragment>
@@ -1971,15 +1970,15 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     const BattleStats = ({ stats }: { stats: BattleState['battleStats'] }) => (
         <StatsPanel>
             <Typography variant="subtitle1" gutterBottom>Battle Statistics</Typography>
-            <Grid container spacing={2}>
-                <Grid item xs={6}>
+            <Grid container spacing={2} sx={{ width: '100%' }}> {/* Added width */}
+                <Grid size={6}> {/* Removed item, updated size prop */}
                     <Typography variant="subtitle2" color="primary">Team 1</Typography>
                     <Typography variant="body2">Damage Dealt: {stats.team1.damageDealt}</Typography>
                     <Typography variant="body2">Critical Hits: {stats.team1.criticalHits}</Typography>
                     <Typography variant="body2">Status Effects: {stats.team1.statusEffectsApplied}</Typography>
                     <Typography variant="body2">Turns: {stats.team1.turnsTaken}</Typography>
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}> {/* Removed item, updated size prop */}
                     <Typography variant="subtitle2" color="secondary">Team 2</Typography>
                     <Typography variant="body2">Damage Dealt: {stats.team2.damageDealt}</Typography>
                     <Typography variant="body2">Critical Hits: {stats.team2.criticalHits}</Typography>
@@ -2043,7 +2042,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         };
 
         // Reset battle state
-        setBattleState((prev: BattleState) => ({
+        setBattleState((prev) => ({
             ...prev,
             team1Pokemon: team1WithAbilities[0] || null,
             team2Pokemon: team2WithAbilities[0] || null,
@@ -2168,39 +2167,39 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         }}>
             {logs.map((log) => (
                 <Box
-                    key={log.id}
+                    key={log?.id}
                     sx={{
                         mb: 1.5,
-                        color: log.type === 'critical' ? '#FF4444' :
-                               log.type === 'death' ? '#FF0000' :
-                               log.type === 'victory' ? '#00FF00' : '#FFFFFF',
-                        textShadow: log.type === 'critical' ? '0 0 8px #FF4444' :
-                                   log.type === 'death' ? '0 0 8px #FF0000' :
-                                   log.type === 'victory' ? '0 0 8px #00FF00' : '0 0 4px rgba(255, 255, 255, 0.5)',
+                        color: log?.type === 'critical' ? '#FF4444' :
+                               log?.type === 'death' ? '#FF0000' :
+                               log?.type === 'victory' ? '#00FF00' : '#FFFFFF',
+                        textShadow: log?.type === 'critical' ? '0 0 8px #FF4444' :
+                                   log?.type === 'death' ? '0 0 8px #FF0000' :
+                                   log?.type === 'victory' ? '0 0 8px #00FF00' : '0 0 4px rgba(255, 255, 255, 0.5)',
                         opacity: 0.9,
                         transform: 'translateY(0)',
                         transition: 'all 0.3s ease-out',
                         '&:hover': {
                             opacity: 1,
                             transform: 'translateX(4px)',
-                            textShadow: log.type === 'critical' ? '0 0 12px #FF4444' :
-                                       log.type === 'death' ? '0 0 12px #FF0000' :
-                                       log.type === 'victory' ? '0 0 12px #00FF00' : '0 0 8px rgba(255, 255, 255, 0.8)',
+                            textShadow: log?.type === 'critical' ? '0 0 12px #FF4444' :
+                                       log?.type === 'death' ? '0 0 12px #FF0000' :
+                                       log?.type === 'victory' ? '0 0 12px #00FF00' : '0 0 8px rgba(255, 255, 255, 0.8)',
                         },
                         position: 'relative',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 1,
                         '&::before': {
-                            content: `"${battleLogIcons[log.type as keyof typeof battleLogIcons]}"`,
+                            content: `"${battleLogIcons[log?.type as keyof typeof battleLogIcons]}"`,
                             fontSize: '1.2em',
                             lineHeight: 1,
                             display: 'inline-block',
                             verticalAlign: 'middle',
                             marginRight: '8px',
-                            animation: log.type === 'critical' ? 'bounce 0.5s ease-in-out' :
-                                      log.type === 'death' ? 'shake 0.5s ease-in-out' :
-                                      log.type === 'victory' ? 'spin 0.5s ease-in-out' : 'none',
+                            animation: log?.type === 'critical' ? 'bounce 0.5s ease-in-out' :
+                                      log?.type === 'death' ? 'shake 0.5s ease-in-out' :
+                                      log?.type === 'victory' ? 'spin 0.5s ease-in-out' : 'none',
                             '@keyframes bounce': {
                                 '0%, 100%': { transform: 'scale(1)' },
                                 '50%': { transform: 'scale(1.2)' }
@@ -2216,7 +2215,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             }
                         }
                     }}
-                    dangerouslySetInnerHTML={{ __html: log.message }}
+                    dangerouslySetInnerHTML={{ __html: log?.message || '' }}
                 />
             ))}
         </Box>
@@ -2244,11 +2243,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     if (currentPokemon) {
                         const currentPokemonHealth = battleState.team2Health[currentPokemon.id];
                         if (currentPokemonHealth === 0) {
-                            const remainingPokemon = battleState.team2RemainingPokemon.filter(p => p.id !== currentPokemon.id);
+                            const remainingPokemon = battleState.team2RemainingPokemon.filter((p: { id: any; }) => p.id !== currentPokemon.id);
                             const nextPokemon = selectNextPokemon(remainingPokemon, currentPokemon);
 
                             if (nextPokemon) {
-                                setBattleState(prev => ({
+                                setBattleState((prev) => ({
                                     ...prev,
                                     team2Pokemon: nextPokemon,
                                     team2RemainingPokemon: remainingPokemon,
@@ -2265,7 +2264,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     console.log('AI selected move:', aiMove.name); // Debug log
 
                     // Set the selected move
-                    setBattleState(prev => ({
+                    setBattleState((prev) => ({
                         ...prev,
                         selectedMove: aiMove,
                         isAttackAnimating: true
@@ -2340,9 +2339,33 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     }
 
                     // Apply damage and update state
-                    setBattleState(prev => {
-                        const defenderHealth = prev.team1Health[safeDefender.id];
+                    setBattleState((prev) => {
+                        const defenderHealth = prev.team1Health[String(safeDefender.id)]; // Cast id to string
                         const newHealth = Math.max(0, defenderHealth - damage);
+
+                        // Correctly update battleStats
+                        const updatedStats = {
+                            ...prev.battleStats,
+                            team2: {
+                                ...prev.battleStats.team2,
+                                damageDealt: prev.battleStats.team2.damageDealt + damage,
+                                criticalHits: prev.battleStats.team2.criticalHits + (isCritical ? 1 : 0),
+                                turnsTaken: prev.battleStats.team2.turnsTaken + 1,
+                                statusEffectsApplied: prev.battleStats.team2.statusEffectsApplied + ((aiMove.statusEffect && Math.random() < aiMove.statusEffect.chance) ? 1 : 0)
+                            }
+                        };
+
+                        // Update status effects if applicable
+                        let newStatusEffects = prev.statusEffects;
+                        if (aiMove.statusEffect && Math.random() < aiMove.statusEffect.chance) {
+                             newStatusEffects = {
+                                ...prev.statusEffects,
+                                [String(safeDefender.id)]: { // Cast id to string
+                                    type: aiMove.statusEffect!.type,
+                                    turns: 3
+                                }
+                            };
+                         }
 
                         let message = `${safeAttacker.name} used ${aiMove.name}!`;
                         if (isCritical) message += ' Critical hit!';
@@ -2352,35 +2375,40 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                         if (newHealth === 0) message += `\n${safeDefender.name} fainted!`;
 
                         return {
-                            ...prev,
-                            team1Health: { ...prev.team1Health, [safeDefender.id]: newHealth },
+                            ...prev, // Ensure full state is returned
+                            team1Health: { ...prev.team1Health, [String(safeDefender.id)]: newHealth }, // Cast id to string
                             lastDamage: damage,
                             criticalHit: isCritical,
                             battleLog: [addBattleLogEntry(message, newHealth === 0 ? 'death' : isCritical ? 'critical' : 'normal'), ...prev.battleLog],
                             isAttackAnimating: false,
-                            currentTurn: 1,
+                            currentTurn: 1, // Switch back to player turn
                             selectedMove: null,
-                            isTurnTimerActive: true
+                            isTurnTimerActive: true,
+                            battleStats: updatedStats, // Use corrected stats
+                            statusEffects: newStatusEffects // Use updated status effects
                         };
                     });
 
-                    // Check for game over
-                    const { isOver, winner } = checkGameOver(battleState);
-                    if (isOver) {
-                        if (soundEnabled) {
-                            playSound('victory');
-                        }
+                    // Check for game over state AFTER the state update that applies damage
+                    setBattleState(prev => {
+                         const { isOver, winner } = checkGameOver(prev);
+                         if (isOver && !prev.gameOver) {
+                             if (soundEnabled) {
+                                 playSound('victory');
+                             }
+                             return {
+                                 ...prev,
+                                 gameOver: true,
+                                 winner,
+                                 battleLog: [addBattleLogEntry(`Team ${winner} wins the battle!`, 'victory'), ...prev.battleLog]
+                             };
+                         }
+                         return prev; // Return previous state if not over
+                     });
 
-                        setBattleState(prev => ({
-                            ...prev,
-                            gameOver: true,
-                            winner,
-                            battleLog: [addBattleLogEntry(`Team ${winner} wins the battle!`, 'victory'), ...prev.battleLog]
-                        }));
-                    }
                 } catch (error) {
                     console.error('AI move selection error:', error);
-                    setBattleState(prev => ({
+                    setBattleState((prev) => ({
                         ...prev,
                         currentTurn: 1,
                         isTurnTimerActive: true
@@ -2422,7 +2450,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 <InputLabel>Difficulty</InputLabel>
                 <Select
                     value={aiDifficulty}
-                    onChange={(e) => setAIDifficulty(e.target.value as AIDifficulty)}
+                    onChange={(e: { target: { value: string; }; }) => setAIDifficulty(e.target.value as AIDifficulty)}
                     label="Difficulty"
                 >
                     <MenuItem value="beginner">Beginner</MenuItem>
@@ -2434,7 +2462,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 <InputLabel>Personality</InputLabel>
                 <Select
                     value={aiPersonality}
-                    onChange={(e) => setAIPersonality(e.target.value as AIPersonality)}
+                    onChange={(e: { target: { value: string; }; }) => setAIPersonality(e.target.value as AIPersonality)}
                     label="Personality"
                 >
                     <MenuItem value="aggressive">Aggressive</MenuItem>
@@ -2450,11 +2478,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         const newId = floatingInfoIdCounterRef.current++;
         const newInfo: FloatingInfo = { id: newId, targetId, text, color, type };
 
-        setFloatingInfos(prev => [...prev, newInfo]);
+        setFloatingInfos((prev) => [...prev, newInfo]);
 
         // Remove the info after animation duration (1.5s)
         setTimeout(() => {
-            setFloatingInfos(prev => prev.filter(info => info.id !== newId));
+            setFloatingInfos((prev) => prev.filter((info: { id: number; }) => info.id !== newId));
         }, 1500);
     }, []);
 
@@ -2556,11 +2584,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         }
 
         // Add the new floating text
-        setFloatingTexts(prev => [...prev, { id, text, color, type, position, targetId }]);
+        setFloatingTexts((prev) => [...prev, { id, text, color, type, position, targetId }]);
 
         // Remove the floating text after animation completes
         setTimeout(() => {
-            setFloatingTexts(prev => prev.filter(item => item.id !== id));
+            setFloatingTexts((prev) => prev.filter((item: { id: number; }) => item.id !== id));
         }, 1500); // Match the animation duration
     }, [battleState.team1Pokemon, battleState.team2Pokemon]);
 
@@ -2634,7 +2662,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
 
     // Handle animation completion
     const handleAnimationComplete = () => {
-      setTypeAnimation(prev => ({
+      setTypeAnimation((prev) => ({
             ...prev,
         isActive: false
       }));
@@ -2715,15 +2743,15 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     </Box>
                 </Stack>
             </Box>
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
+            <Grid container spacing={3} columnSpacing={{ xs: 12, sm: 6, md: 6 }}>
+                <Grid size={{ xs: 12, md: 6 }}> {/* Added size prop */}
                     <Paper sx={{ p: 2 }}>
                         <Typography variant="subtitle1" gutterBottom>
                             Select Team 1
                         </Typography>
-                        <Grid container spacing={2}>
-                            {teams.map(team => (
-                                <Grid item xs={12} sm={6} key={team.id}>
+                        <Grid container spacing={2} sx={{ width: '100%' }}> {/* Added width */}
+                            {teams.map((team: { id: any; name: any; pokemon: any[]; }) => (
+                                <Grid size={{ xs: 12, sm: 6 }} key={team.id}> {/* Removed item, updated size prop */}
                                     <Card
                                         sx={{
                                             cursor: 'pointer',
@@ -2749,7 +2777,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                 )}
                                             </Box>
                                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
-                                                {team.pokemon.map(pokemon => (
+                                                {team.pokemon.map((pokemon: { id: any; image: any; name: any; types: any[]; }) => (
                                                     <Box key={pokemon.id} sx={{ position: 'relative' }}>
                                                         <CardMedia
                                                             component="img"
@@ -2768,7 +2796,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                             display: 'flex',
                                                             gap: 0.5
                                                         }}>
-                                                            {pokemon.types.map(type => (
+                                                            {pokemon.types.map((type: any) => (
                                                                 <Box
                                                                     key={type}
                                                                     sx={{
@@ -2794,14 +2822,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                         </Grid>
                     </Paper>
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}> {/* Added size prop */}
                     <Paper sx={{ p: 2 }}>
                         <Typography variant="subtitle1" gutterBottom>
                             Select Team 2
                         </Typography>
-                        <Grid container spacing={2}>
-                            {teams.map(team => (
-                                <Grid item xs={12} sm={6} key={team.id}>
+                        <Grid container spacing={2} sx={{ width: '100%' }}> {/* Added width */}
+                            {teams.map((team: { id: any; name: any; pokemon: any[]; }) => (
+                                <Grid size={{ xs: 12, sm: 6 }} key={team.id}> {/* Removed item, updated size prop */}
                                     <Card
                                         sx={{
                                             cursor: 'pointer',
@@ -2827,7 +2855,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                 )}
                                             </Box>
                                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
-                                                {team.pokemon.map(pokemon => (
+                                                {team.pokemon.map((pokemon: { id: any; image: any; name: any; types: any[]; }) => (
                                                     <Box key={pokemon.id} sx={{ position: 'relative' }}>
                                                         <CardMedia
                                                             component="img"
@@ -2846,7 +2874,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                                             display: 'flex',
                                                             gap: 0.5
                                                         }}>
-                                                            {pokemon.types.map(type => (
+                                                            {pokemon.types.map((type: any) => (
                                                                 <Box
                                                                     key={type}
                                                                     sx={{
@@ -2979,7 +3007,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                         <WeatherControls />
 
                         {/* Floating combat text */}
-                        {floatingTexts.map(text => (
+                        {floatingTexts.map((text: { id: Key | null | undefined; text: any; color: any; position: { x: any; y: any; }; type: any; }) => (
                             <FloatingCombatText
                                 key={text.id}
                                 text={text.text}
@@ -3005,7 +3033,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                 overflow: 'hidden'
                             }
                         }}>
-                            <Grid item xs={5}>
+                            <Grid size={5}> {/* Added size prop */}
                                 <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
                                     {battleState.team1Pokemon && (
                                         renderPokemonCard(
@@ -3017,7 +3045,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                     )}
                                 </Box>
                             </Grid>
-                            <Grid item xs={2} sx={{ textAlign: 'center' }}>
+                            <Grid size={2} sx={{ textAlign: 'center', minWidth: 0 }}> {/* Added size prop */}
                                 <Box sx={{
                                     display: 'flex',
                                     flexDirection: 'column',
@@ -3050,7 +3078,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                     </Typography>
                                 </Box>
                             </Grid>
-                            <Grid item xs={5}>
+                            <Grid size={5} sx={{ minWidth: 0 }}> {/* Added size prop */}
                                 <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
                                     {battleState.team2Pokemon && (
                                         renderPokemonCard(
@@ -3169,7 +3197,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                 </Typography>
                                 <Slider
                                     value={battleState.battleSpeed}
-                                    onChange={(_: unknown, value: number) => setBattleState(prev => ({
+                                    onChange={(_: unknown, value: number) => setBattleState((prev) => ({
                                         ...prev,
                                         battleSpeed: value as number
                                     }))}
@@ -3195,7 +3223,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                 <Button
                                     variant="outlined"
                                     size="small"
-                                    onClick={() => setBattleState(prev => ({
+                                    onClick={() => setBattleState((prev) => ({
                                         ...prev,
                                         isTurnTimerActive: !prev.isTurnTimerActive
                                     }))}
@@ -3214,7 +3242,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                         <MoveSelection
                             pokemon={battleState.currentTurn === 1 ? battleState.team1Pokemon : battleState.team2Pokemon}
                             onSelectMove={(move) => {
-                                setBattleState(prev => ({
+                                setBattleState((prev) => ({
                                     ...prev,
                                     selectedMove: move,
                                     showMoveSelection: false,
@@ -3222,7 +3250,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                                 }));
                             }}
                             onCancel={() => {
-                                setBattleState(prev => ({
+                                setBattleState((prev) => ({
                                     ...prev,
                                     showMoveSelection: false,
                                     isTurnTimerActive: true
