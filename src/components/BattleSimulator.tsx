@@ -25,6 +25,8 @@ import {
 import FloatingCombatText from './FloatingCombatText';
 import TypeAnimation from './TypeAnimation';
 import { Key } from 'react';
+import type { TerrainType, TerrainEffect } from '../types/terrain';
+import { TERRAIN_EFFECTS } from '../types/terrain';
 
 // Define AIPersonality type
 type AIPersonality = 'aggressive' | 'defensive' | 'balanced';
@@ -209,6 +211,8 @@ interface BattleState {
             isActive: boolean;
         };
     };
+    terrain: TerrainType;
+    terrainTurns: number;
 }
 
 // Define animation variants
@@ -339,6 +343,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         isTurnTimerActive: true,
         showMoveSelection: false,
         activeAbilities: {},
+        terrain: 'none',
+        terrainTurns: 0,
     });
     const [floatingInfos, setFloatingInfos] = useState<FloatingInfo[]>([]);
     const floatingInfoIdCounterRef = useRef(0);
@@ -488,6 +494,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                 isTurnTimerActive: true,
                 showMoveSelection: false,
                 activeAbilities: {},
+                terrain: 'none',
+                terrainTurns: 0,
             });
         }
     }, [addBattleLogEntry, team1, team2]);
@@ -640,9 +648,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         return { isOver: false, winner: null };
     };
 
-    // Update handleAttack to properly update health
+    // Update handleAttack to include terrain effects
     const handleAttack = async (selectedMove: Move) => {
-        console.log('Executing attack...'); // Debug log
         if (!battleState.team1Pokemon || !battleState.team2Pokemon || !selectedMove) {
             console.log('Missing required data for attack:', {
                 team1Pokemon: !!battleState.team1Pokemon,
@@ -655,26 +662,12 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
         const attacker = battleState.currentTurn === 1 ? battleState.team1Pokemon : battleState.team2Pokemon;
         const defender = battleState.currentTurn === 1 ? battleState.team2Pokemon : battleState.team1Pokemon;
 
-        console.log('Attack details:', { // Debug log
-            attacker: attacker.name,
-            defender: defender.name,
-            move: selectedMove.name,
-            currentTurn: battleState.currentTurn
-        });
+        // Calculate base damage
+        const baseDamageResult = calculateDamage(attacker, defender, selectedMove);
 
-        // Activate abilities at turn start
-        if (battleState.currentTurn === 1 && battleState.team1Pokemon) {
-            safeActivateAbility(battleState.team1Pokemon, 'onTurnStart', battleState, setBattleState, addBattleLogEntry);
-        } else if (battleState.currentTurn === 2 && battleState.team2Pokemon) {
-            safeActivateAbility(battleState.team2Pokemon, 'onTurnStart', battleState, setBattleState, addBattleLogEntry);
-        }
-
-        // Activate abilities before attack
-        if (battleState.currentTurn === 1 && battleState.team1Pokemon) {
-            safeActivateAbility(battleState.team1Pokemon, 'onAttack', battleState, setBattleState, addBattleLogEntry);
-        } else if (battleState.currentTurn === 2 && battleState.team2Pokemon) {
-            safeActivateAbility(battleState.team2Pokemon, 'onAttack', battleState, setBattleState, addBattleLogEntry);
-        }
+        // Apply terrain effects
+        const currentTerrainEffect = TERRAIN_EFFECTS[battleState.terrain];
+        const finalDamage = Math.floor(baseDamageResult.damage * currentTerrainEffect.damageMultiplier);
 
         // Start attack animation
         setBattleState((prev) => ({ ...prev, isAttackAnimating: true }));
@@ -684,158 +677,67 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             playSound('attack');
         }
 
-        // Ensure animation is triggered with clear sequence
-        console.log(`Initiating attack animation for move type: ${selectedMove.type}`);
-
-        // Clear any existing animation first
-        setTypeAnimation((prev) => ({ ...prev, isActive: false }));
-
-        // Short delay to ensure reset
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        // Set new animation
-        setTypeAnimation({
-            type: selectedMove.type,
-            isActive: true,
-            position: battleState.currentTurn === 1 ? 'attacker' : 'defender'
-        });
-
-        console.log("Animation state set:", {
-            type: selectedMove.type,
-            position: battleState.currentTurn === 1 ? 'attacker' : 'defender'
-        });
-
-        // Generate particles (which will also trigger the type animation)
-        // Note: This is now redundant with direct state setting above, but keeping for consistency
+        // Generate particles
         generateParticles(selectedMove.type, battleState.currentTurn === 1 ? 0 : 100, 50);
 
         // Wait for animation
-        const animationDuration = 1500; // Slightly longer to ensure animation completes
-        console.log(`Waiting ${animationDuration}ms for animation to complete`);
-        await new Promise(resolve => setTimeout(resolve, animationDuration / battleState.battleSpeed));
+        await new Promise(resolve => setTimeout(resolve, 1500 / battleState.battleSpeed));
 
-        console.log("Attack animation complete, calculating damage...");
-
-        // Calculate damage
-        const damageResult = calculateDamage(attacker, defender, selectedMove);
-        const damage = damageResult.damage;
-
-        // Show effectiveness text
-        if (damageResult.effectivenessText && damageResult.effectivenessText !== 'Paralyzed!' && damageResult.effectivenessText !== 'Asleep!' && damageResult.effectivenessText !== 'Frozen!') {
-            let color = '#FFFFFF';
-            if (damageResult.effectivenessMultiplier > 1) color = '#4CAF50'; // Green for super effective
-            else if (damageResult.effectivenessMultiplier < 1) color = '#FFA726'; // Orange for not very effective
-            addFloatingInfo(attacker.id, damageResult.effectivenessText, color, 'effectiveness');
-        }
-
-        // Apply damage and update state
+        // Update battle state with damage
         setBattleState((prev) => {
             const defenderHealth = prev.currentTurn === 1
-                ? prev.team2Health[String(defender.id)] // Cast id to string
-                : prev.team1Health[String(defender.id)]; // Cast id to string
+                ? prev.team2Health[String(defender.id)]
+                : prev.team1Health[String(defender.id)];
 
-            const newHealth = Math.max(0, defenderHealth - damage);
+            const newHealth = Math.max(0, defenderHealth - finalDamage);
 
             const updatedHealth = prev.currentTurn === 1
-                ? { ...prev.team2Health, [String(defender.id)]: newHealth } // Cast id to string
-                : { ...prev.team1Health, [String(defender.id)]: newHealth }; // Cast id to string
+                ? { ...prev.team2Health, [String(defender.id)]: newHealth }
+                : { ...prev.team1Health, [String(defender.id)]: newHealth };
 
-            // Update battle statistics correctly
             const currentTeamKey = prev.currentTurn === 1 ? 'team1' : 'team2';
             const updatedStats = {
                 ...prev.battleStats,
                 [currentTeamKey]: {
                     ...prev.battleStats[currentTeamKey],
-                    damageDealt: prev.battleStats[currentTeamKey].damageDealt + damage,
-                    criticalHits: prev.battleStats[currentTeamKey].criticalHits + (damageResult.isCritical ? 1 : 0),
+                    damageDealt: prev.battleStats[currentTeamKey].damageDealt + finalDamage,
+                    criticalHits: prev.battleStats[currentTeamKey].criticalHits + (baseDamageResult.isCritical ? 1 : 0),
                     turnsTaken: prev.battleStats[currentTeamKey].turnsTaken + 1,
-                    // Make sure statusEffectsApplied exists here if it's used later
-                    statusEffectsApplied: prev.battleStats[currentTeamKey].statusEffectsApplied + ((selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance) ? 1 : 0)
+                    statusEffectsApplied: prev.battleStats[currentTeamKey].statusEffectsApplied +
+                        ((selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance * currentTerrainEffect.statusEffectChance) ? 1 : 0)
                 }
             };
 
             let message = `${attacker.name} used ${selectedMove.name}!`;
-            if (damageResult.isCritical) message += ' Critical hit!';
-            if (damage > 0) {
-                message += ` <span class="damage-text">(-${damage} HP)</span>`;
-                addFloatingInfo(defender.id, `-${damage}`, '#f44336', 'damage');
-            }
-
-            // Apply status effect if the move has one
-            let newStatusEffects = prev.statusEffects;
-            if (selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance) {
-                message += `\n${defender.name} was ${selectedMove.statusEffect.type}ed!`;
-                addFloatingInfo(defender.id, `${selectedMove.statusEffect.type}ed!`, '#FFA726', 'status');
-                // Don't update stats count here, it was done above
-                newStatusEffects = {
-                    ...prev.statusEffects,
-                    [String(defender.id)]: { // Cast id to string
-                        type: selectedMove.statusEffect!.type,
-                        turns: 3
-                    }
-                };
+            if (baseDamageResult.isCritical) message += ' Critical hit!';
+            if (finalDamage > 0) {
+                message += ` <span class="damage-text">(-${finalDamage} HP)</span>`;
+                addFloatingInfo(defender.id, `-${finalDamage}`, '#f44336', 'damage');
             }
 
             if (newHealth === 0) {
                 message += `\n${defender.name} fainted!`;
-
-                // Activate abilities when a Pokémon faints
-                if (defender.activeAbility) {
-                    safeActivateAbility(defender, 'onFaint', battleState, setBattleState, addBattleLogEntry);
-                }
-
-                // Handle Pokémon switching for AI when their Pokémon faints
-                if (prev.currentTurn === 2) {
-                    const remainingPokemon = prev.team2RemainingPokemon.filter((p: { id: any; }) => p.id !== defender.id);
-                    const nextPokemon = selectNextPokemon(remainingPokemon, defender);
-
-                    if (nextPokemon) {
-                        message += `\nGo, ${nextPokemon.name}!`;
-                        return {
-                            ...prev,
-                            team1Health: prev.team1Health,
-                            team2Health: updatedHealth,
-                            lastDamage: damage,
-                            criticalHit: damageResult.isCritical,
-                            battleLog: [addBattleLogEntry(message, 'death'), ...prev.battleLog],
-                            isAttackAnimating: false,
-                            currentTurn: 1,
-                            selectedMove: null,
-                            isTurnTimerActive: true,
-                            team2Pokemon: nextPokemon,
-                            team2RemainingPokemon: remainingPokemon,
-                            statusEffects: newStatusEffects, // Use updated status effects
-                            battleStats: updatedStats // Use updated stats
-                        };
-                    }
-                }
             }
 
             return {
                 ...prev,
                 team1Health: prev.currentTurn === 1 ? prev.team1Health : updatedHealth,
                 team2Health: prev.currentTurn === 1 ? updatedHealth : prev.team2Health,
-                battleStats: updatedStats, // Use updated stats
-                battleLog: [addBattleLogEntry(message, damageResult.isCritical ? 'critical' : 'normal'), ...prev.battleLog],
-                lastDamage: damage,
-                criticalHit: damageResult.isCritical,
-                lastTypeEffectiveness: {
-                    multiplier: damageResult.effectivenessMultiplier,
-                    attackerType: selectedMove.type,
-                    defenderType: defender.types[0]
-                },
+                lastDamage: finalDamage,
+                criticalHit: baseDamageResult.isCritical,
+                battleLog: [addBattleLogEntry(message, newHealth === 0 ? 'death' : 'normal'), ...prev.battleLog],
                 isAttackAnimating: false,
                 currentTurn: prev.currentTurn === 1 ? 2 : 1,
                 selectedMove: null,
                 isTurnTimerActive: true,
-                statusEffects: newStatusEffects // Use updated status effects
+                battleStats: updatedStats
             };
         });
 
-        // Check for game over state AFTER the state update that applies damage
+        // Check for game over
         setBattleState(prev => {
             const { isOver, winner } = checkGameOver(prev);
-            if (isOver && !prev.gameOver) { // Only update if game wasn't already over
+            if (isOver && !prev.gameOver) {
                 if (soundEnabled) {
                     playSound('victory');
                 }
@@ -846,67 +748,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     battleLog: [addBattleLogEntry(`Team ${winner} wins the battle!`, 'victory'), ...prev.battleLog]
                 };
             }
-            return prev; // Return previous state if game is not over
+            return prev;
         });
-
-        // Activate abilities before attack
-        if (battleState.currentTurn === 1 && battleState.team1Pokemon) {
-            safeActivateAbility(battleState.team1Pokemon, 'onAttack', battleState, setBattleState, addBattleLogEntry);
-        } else if (battleState.currentTurn === 2 && battleState.team2Pokemon) {
-            safeActivateAbility(battleState.team2Pokemon, 'onAttack', battleState, setBattleState, addBattleLogEntry);
-        }
-
-        // Apply status effect if the move has one
-        if (selectedMove.statusEffect && Math.random() < selectedMove.statusEffect.chance) {
-            setBattleState((prev) => ({
-                ...prev,
-                statusEffects: {
-                    ...prev.statusEffects,
-                    [String(defender.id)]: { // Cast id to string
-                        type: selectedMove.statusEffect!.type,
-                        turns: 3
-                    }
-                },
-                battleLog: [addBattleLogEntry(`${defender.name} was ${selectedMove.statusEffect!.type}ed!`, 'normal'), ...prev.battleLog]
-            }));
-
-            // Activate abilities when a Pokémon is hit by a status effect
-            if (defender.activeAbility) {
-                safeActivateAbility(defender, 'onStatus', battleState, setBattleState, addBattleLogEntry);
-            }
-
-            // Add visual feedback
-            addFloatingInfo(defender.id, `${selectedMove.statusEffect!.type}ed!`, '#FFA726', 'status');
-        }
-
-        // At the end of handleAttack, add floating text calls
-        console.log("Adding floating text for Pokemon ID:", defender.id);
-        if (damage > 0) {
-            // Add floating text for damage - use only addFloatingText for consistency
-            addFloatingText(
-                defender.id,
-                `${damage}${damageResult.isCritical ? '!' : ''}`,
-                damageResult.isCritical ? '#FF5722' : '#FFFFFF',
-                'damage'
-            );
-
-            // Add effectiveness text if applicable
-            if (damageResult.effectivenessMultiplier > 1.5) {
-                addFloatingText(
-                    defender.id,
-                    'Super effective!',
-                    '#4CAF50',
-                    'effectiveness'
-                );
-            } else if (damageResult.effectivenessMultiplier < 0.5) {
-                addFloatingText(
-                    defender.id,
-                    'Not very effective...',
-                    '#FFC107',
-                    'effectiveness'
-                );
-            }
-        }
     };
 
     const renderPokemonCard = (pokemon: Pokemon, health: number, isAttacking: boolean, isTakingDamage: boolean) => {
@@ -2076,6 +1919,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             isTurnTimerActive: true,
             showMoveSelection: false,
             activeAbilities,
+            terrain: 'none',
+            terrainTurns: 0,
         }));
 
         // Open battle dialog
@@ -2379,7 +2224,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                             team1Health: { ...prev.team1Health, [String(safeDefender.id)]: newHealth }, // Cast id to string
                             lastDamage: damage,
                             criticalHit: isCritical,
-                            battleLog: [addBattleLogEntry(message, newHealth === 0 ? 'death' : isCritical ? 'critical' : 'normal'), ...prev.battleLog],
+                            battleLog: [addBattleLogEntry(message, newHealth === 0 ? 'death' : 'normal'), ...prev.battleLog],
                             isAttackAnimating: false,
                             currentTurn: 1, // Switch back to player turn
                             selectedMove: null,
@@ -2666,6 +2511,76 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
             ...prev,
         isActive: false
       }));
+    };
+
+    // Add terrain selection component
+    const TerrainSelection = () => (
+        <Box sx={{
+            display: 'flex',
+            gap: 2,
+            alignItems: 'center',
+            mb: 2,
+            p: 2,
+            bgcolor: 'rgba(22, 33, 62, 0.8)',
+            borderRadius: 2,
+            backdropFilter: 'blur(10px)',
+            width: '100%',
+            background: 'linear-gradient(165deg, rgba(22, 33, 62, 0.8) 0%, rgba(26, 32, 53, 0.8) 100%)',
+        }}>
+            <Typography variant="subtitle1">Terrain</Typography>
+            <FormControl size="small">
+                <InputLabel>Select Terrain</InputLabel>
+                <Select
+                    value={battleState.terrain}
+                    onChange={(e) => {
+                        const newTerrain = e.target.value as TerrainType;
+                        setBattleState(prev => ({
+                            ...prev,
+                            terrain: newTerrain,
+                            terrainTurns: TERRAIN_EFFECTS[newTerrain].duration,
+                            battleLog: [
+                                addBattleLogEntry(`${TERRAIN_EFFECTS[newTerrain].visualEffect} ${newTerrain.charAt(0).toUpperCase() + newTerrain.slice(1)} Terrain activated!`, 'normal'),
+                                ...prev.battleLog
+                            ]
+                        }));
+                    }}
+                    label="Select Terrain"
+                >
+                    {Object.keys(TERRAIN_EFFECTS).map((terrain) => (
+                        <MenuItem key={terrain} value={terrain}>
+                            {TERRAIN_EFFECTS[terrain as TerrainType].visualEffect} {terrain.charAt(0).toUpperCase() + terrain.slice(1)}
+                        </MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
+        </Box>
+    );
+
+    // Add terrain effect display component
+    const TerrainEffect = () => {
+        if (battleState.terrain === 'none') return null;
+
+        return (
+            <Box
+                sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    zIndex: 1,
+                    opacity: 0.3,
+                    fontSize: '4rem',
+                    animation: 'pulse 2s infinite'
+                }}
+            >
+                {TERRAIN_EFFECTS[battleState.terrain].visualEffect}
+            </Box>
+        );
     };
 
     return (
@@ -3289,6 +3204,12 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
                     />
                 </Box>
             )}
+
+            {/* Add terrain effect display */}
+            <TerrainEffect />
+
+            {/* Add terrain selection */}
+            <TerrainSelection />
         </Box>
     );
 };
