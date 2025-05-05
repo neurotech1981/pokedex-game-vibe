@@ -4,6 +4,7 @@ import { Ability } from './abilities';
 import { StatusEffect } from './status';
 import { Particle } from './particles';
 import { WeatherType } from './weather';
+import { TerrainType } from './terrain';
 
 export interface BattleState {
     team1Pokemon: Pokemon | null;
@@ -34,6 +35,8 @@ export interface BattleState {
         defenderType: string;
     } | null;
     weather: WeatherType;
+    terrain: TerrainType;
+    terrainTurns: number;
     statusEffects: {
         [key: number]: StatusEffect;
     };
