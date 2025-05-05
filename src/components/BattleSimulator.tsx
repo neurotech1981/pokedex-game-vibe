@@ -2559,7 +2559,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, getTypeColor, typeEffectivene
     // Add terrain effect display component
     const TerrainEffect = () => {
         if (battleState.terrain === 'none') return null;
-        
+
         return (
             <Box
                 sx={{
