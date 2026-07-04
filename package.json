@@ -6,18 +6,23 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "vitest",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@fontsource/montserrat": "^5.2.6",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "@tanstack/react-query": "^5.71.5",
     "@tanstack/react-query-devtools": "^5.71.5",
     "framer-motion": "^12.6.3",
+    "gifuct-js": "^2.1.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "three": "^0.185.1",
     "use-debounce": "^10.0.4",
     "uuid": "^11.1.0"
   },
@@ -28,6 +33,7 @@
     "@mui/material": "^7.0.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.1",
+    "@types/three": "^0.185.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.29.0",
     "@typescript-eslint/parser": "^8.29.0",

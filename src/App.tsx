@@ -1,13 +1,11 @@
 import './App.css'
 import Pokemon from './components/Pokemon';
-import { Box } from '@mui/material';
+import '@fontsource/montserrat/400.css';
+import '@fontsource/montserrat/600.css';
+import '@fontsource/montserrat/700.css';
 
 function App() {
-  return (
-    <Box sx={{ p: 4 }}>
-      <Pokemon />
-    </Box>
-  )
+  return <Pokemon />;
 }
 
-export default App
+export default App;

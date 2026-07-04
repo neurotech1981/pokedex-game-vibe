@@ -19,6 +19,8 @@ export interface Pokemon {
         };
     }[];
     activeAbility?: Ability;
+    is_legendary?: boolean;
+    is_mythical?: boolean;
 }
 
 export interface Move {

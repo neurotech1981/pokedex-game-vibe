@@ -14,6 +14,8 @@ import {
     DialogContent,
     TextField,
     DialogActions,
+    Tab,
+    Tabs,
     Tooltip,
     InputAdornment,
     Menu,
@@ -28,143 +30,24 @@ import SearchIcon from '@mui/icons-material/Search';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-
-interface Pokemon {
-    id: number;
-    name: string;
-    image: string;
-    types: string[];
-    height: number;
-    weight: number;
-    stats: {
-        base_stat: number;
-        stat: {
-            name: string;
-        };
-    }[];
-    abilities: {
-        ability: {
-            name: string;
-        };
-    }[];
-}
-
-interface Team {
-    id: string;
-    name: string;
-    pokemon: Pokemon[];
-}
+import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
+import { TYPE_EFFECTIVENESS } from '../data/typeChart';
+import type { HeldItemId } from '../data/items';
+import { HELD_ITEMS, HELD_ITEM_IDS } from '../data/items';
+import type { Pokemon, Team } from '../types/pokemon';
+import type { PlayerProfile } from '../utils/progression';
+import { availableHeldItems, getMonProgress, registerMonProgress } from '../utils/progression';
 
 interface Props {
     pokemons: Pokemon[];
     getTypeColor: (type: string) => string;
     teams: Team[];
     onTeamsChange: (teams: Team[]) => void;
+    profile: PlayerProfile;
+    updateProfile: (updater: (prev: PlayerProfile) => PlayerProfile) => void;
 }
 
 const MAX_TEAM_SIZE = 6;
-
-// Type effectiveness data
-interface TypeEffectiveness {
-    [key: string]: {
-        superEffective: string[];
-        notVeryEffective: string[];
-        noEffect: string[];
-    };
-}
-
-const TYPE_EFFECTIVENESS: TypeEffectiveness = {
-    normal: {
-        superEffective: [],
-        notVeryEffective: ['rock', 'steel'],
-        noEffect: ['ghost'],
-    },
-    fire: {
-        superEffective: ['grass', 'ice', 'bug', 'steel'],
-        notVeryEffective: ['fire', 'water', 'rock', 'dragon'],
-        noEffect: [],
-    },
-    water: {
-        superEffective: ['fire', 'ground', 'rock'],
-        notVeryEffective: ['water', 'grass', 'dragon'],
-        noEffect: [],
-    },
-    electric: {
-        superEffective: ['water', 'flying'],
-        notVeryEffective: ['electric', 'grass', 'dragon'],
-        noEffect: ['ground'],
-    },
-    grass: {
-        superEffective: ['water', 'ground', 'rock'],
-        notVeryEffective: ['fire', 'grass', 'poison', 'flying', 'bug', 'dragon', 'steel'],
-        noEffect: [],
-    },
-    ice: {
-        superEffective: ['grass', 'ground', 'flying', 'dragon'],
-        notVeryEffective: ['fire', 'water', 'ice', 'steel'],
-        noEffect: [],
-    },
-    fighting: {
-        superEffective: ['normal', 'ice', 'rock', 'dark', 'steel'],
-        notVeryEffective: ['poison', 'flying', 'psychic', 'bug', 'fairy'],
-        noEffect: ['ghost'],
-    },
-    poison: {
-        superEffective: ['grass', 'fairy'],
-        notVeryEffective: ['poison', 'ground', 'rock', 'ghost'],
-        noEffect: ['steel'],
-    },
-    ground: {
-        superEffective: ['fire', 'electric', 'poison', 'rock', 'steel'],
-        notVeryEffective: ['grass', 'bug'],
-        noEffect: ['flying'],
-    },
-    flying: {
-        superEffective: ['grass', 'fighting', 'bug'],
-        notVeryEffective: ['electric', 'rock', 'steel'],
-        noEffect: [],
-    },
-    psychic: {
-        superEffective: ['fighting', 'poison'],
-        notVeryEffective: ['psychic', 'steel'],
-        noEffect: ['dark'],
-    },
-    bug: {
-        superEffective: ['grass', 'psychic', 'dark'],
-        notVeryEffective: ['fire', 'fighting', 'poison', 'flying', 'ghost', 'steel', 'fairy'],
-        noEffect: [],
-    },
-    rock: {
-        superEffective: ['fire', 'ice', 'flying', 'bug'],
-        notVeryEffective: ['fighting', 'ground', 'steel'],
-        noEffect: [],
-    },
-    ghost: {
-        superEffective: ['psychic', 'ghost'],
-        notVeryEffective: ['dark'],
-        noEffect: ['normal'],
-    },
-    dragon: {
-        superEffective: ['dragon'],
-        notVeryEffective: ['steel'],
-        noEffect: ['fairy'],
-    },
-    dark: {
-        superEffective: ['psychic', 'ghost'],
-        notVeryEffective: ['fighting', 'dark', 'fairy'],
-        noEffect: [],
-    },
-    steel: {
-        superEffective: ['ice', 'rock', 'fairy'],
-        notVeryEffective: ['fire', 'water', 'electric', 'steel'],
-        noEffect: [],
-    },
-    fairy: {
-        superEffective: ['fighting', 'dragon', 'dark'],
-        notVeryEffective: ['fire', 'poison', 'steel'],
-        noEffect: [],
-    },
-};
 
 interface TeamAnalysis {
     coverage: {
@@ -178,7 +61,7 @@ interface TeamAnalysis {
     suggestions: Pokemon[];
 }
 
-const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsChange }) => {
+const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsChange, profile, updateProfile }) => {
     const [pokemonSearch, setPokemonSearch] = useState('');
     const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
     const [teamAnalysis, setTeamAnalysis] = useState<{ [key: string]: TeamAnalysis }>({});
@@ -187,7 +70,11 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
     const [editingTeam, setEditingTeam] = useState<Team | null>(null);
-    const [draggedPokemon, setDraggedPokemon] = useState<Pokemon | null>(null);
+    // Drag source: an available Pokémon, or a Box entry (boxIndex set)
+    const [draggedPokemon, setDraggedPokemon] = useState<{ pokemon: Pokemon; boxIndex?: number } | null>(null);
+    const [rightTab, setRightTab] = useState(0);
+    const [boxMenu, setBoxMenu] = useState<{ anchor: HTMLElement; boxIndex: number } | null>(null);
+    const [releaseIndex, setReleaseIndex] = useState<number | null>(null);
 
     // Filter available Pokémon
     const filteredPokemons = React.useMemo(() => {
@@ -280,6 +167,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
             }
         });
         setTeamAnalysis(newAnalysis);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [teams]);
 
     const handleCreateTeam = () => {
@@ -340,8 +228,50 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
         onTeamsChange(updatedTeams);
     };
 
-    const handleDragStart = (pokemon: Pokemon) => {
-        setDraggedPokemon(pokemon);
+    const canJoinTeam = (team: Team, pokemonId: number) =>
+        team.pokemon.length < MAX_TEAM_SIZE && !team.pokemon.some(p => p.id === pokemonId);
+
+    // Move a Box entry into a team: add to the team, record progress
+    // (level/shiny/elite), then remove the entry from the box.
+    const handleAddFromBox = (team: Team, boxIndex: number) => {
+        const entry = profile.box[boxIndex];
+        if (!entry || !canJoinTeam(team, entry.pokemon.id)) return;
+        handleAddPokemon(team, entry.pokemon);
+        updateProfile(prev => ({
+            ...registerMonProgress(prev, {
+                id: entry.pokemon.id,
+                level: entry.level,
+                shiny: entry.shiny,
+                elite: entry.elite,
+            }),
+            box: prev.box.filter((_, i) => i !== boxIndex),
+        }));
+    };
+
+    const handleReleaseFromBox = (boxIndex: number) => {
+        updateProfile(prev => ({ ...prev, box: prev.box.filter((_, i) => i !== boxIndex) }));
+        setReleaseIndex(null);
+    };
+
+    // Equip/unequip a held item on a species ('' clears it)
+    const handleEquipHeldItem = (pokemonId: number, itemId: HeldItemId | '') => {
+        updateProfile(prev => {
+            const existing = prev.mons[pokemonId] ?? { xp: 0, level: 50 };
+            return {
+                ...prev,
+                mons: {
+                    ...prev.mons,
+                    [pokemonId]: { ...existing, heldItem: itemId === '' ? undefined : itemId },
+                },
+            };
+        });
+    };
+
+    // Held items the player owns at all (for the equip dropdown)
+    const ownedHeldItems = HELD_ITEM_IDS.filter(id => (profile.heldItems[id] ?? 0) > 0);
+
+    const handleDragStart = (pokemon: Pokemon, boxIndex?: number) => {
+        setDraggedPokemon({ pokemon, boxIndex });
     };
 
     const handleDragOver = (event: React.DragEvent) => {
@@ -349,9 +279,21 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
     };
 
     const handleDrop = (team: Team) => {
-        if (draggedPokemon) {
-            handleAddPokemon(team, draggedPokemon);
-            setDraggedPokemon(null);
+        if (!draggedPokemon) return;
+        if (draggedPokemon.boxIndex !== undefined) {
+            handleAddFromBox(team, draggedPokemon.boxIndex);
+        } else {
+            handleAddPokemon(team, draggedPokemon.pokemon);
+        }
+        setDraggedPokemon(null);
+    };
+
+    const handleQuickAdd = (pokemon: Pokemon) => {
+        const target = teams.find(
+            t => t.pokemon.length < MAX_TEAM_SIZE && !t.pokemon.some(p => p.id === pokemon.id)
+        );
+        if (target) {
+            handleAddPokemon(target, pokemon);
         }
     };
 
@@ -387,7 +329,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6">
+                <Typography variant="h5" sx={{ fontWeight: 700 }}>
                     Team Builder
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 2 }}>
@@ -446,21 +388,27 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                 {team.name}
                                             </Typography>
                                             <Box>
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={(e) => {
-                                                        setActiveSuggestionTeam(team.id);
-                                                        setSuggestionsAnchorEl(e.currentTarget);
-                                                    }}
-                                                >
-                                                    <TipsAndUpdatesIcon />
-                                                </IconButton>
-                                                <IconButton size="small" onClick={() => handleEditTeam(team)}>
-                                                    <EditIcon />
-                                                </IconButton>
-                                                <IconButton size="small" onClick={() => handleDeleteTeam(team.id)}>
-                                                    <DeleteIcon />
-                                                </IconButton>
+                                                <Tooltip title="Suggested Pokémon">
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => {
+                                                            setActiveSuggestionTeam(team.id);
+                                                            setSuggestionsAnchorEl(e.currentTarget);
+                                                        }}
+                                                    >
+                                                        <TipsAndUpdatesIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Rename team">
+                                                    <IconButton size="small" onClick={() => handleEditTeam(team)}>
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Delete team">
+                                                    <IconButton size="small" onClick={() => handleDeleteTeam(team.id)}>
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         </Box>
 
@@ -469,7 +417,9 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                         </Typography>
 
                                         <Grid container spacing={1}>
-                                            {team.pokemon.map(pokemon => (
+                                            {team.pokemon.map(pokemon => {
+                                                const progress = getMonProgress(profile, pokemon.id);
+                                                return (
                                                 <Grid size={{ xs: 4, sm: 2 }} key={pokemon.id}>
                                                     <Card
                                                         sx={{
@@ -494,6 +444,20 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                         >
                                                             <DeleteIcon />
                                                         </IconButton>
+                                                        <Chip
+                                                            label={`Lv ${progress.level}`}
+                                                            size="small"
+                                                            sx={{
+                                                                position: 'absolute',
+                                                                top: 4,
+                                                                left: 4,
+                                                                height: 18,
+                                                                fontSize: '0.6rem',
+                                                                fontWeight: 700,
+                                                                bgcolor: 'rgba(0,0,0,0.55)',
+                                                                color: '#fff',
+                                                            }}
+                                                        />
                                                         <CardMedia
                                                             component="img"
                                                             image={pokemon.image}
@@ -513,9 +477,22 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                                     textTransform: 'capitalize',
                                                                 }}
                                                             >
-                                                                {pokemon.name}
+                                                                {progress.shiny ? '✨ ' : ''}{pokemon.name}
                                                             </Typography>
                                                             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                                {progress.elite && (
+                                                                    <Chip
+                                                                        label="ELITE"
+                                                                        size="small"
+                                                                        sx={{
+                                                                            bgcolor: '#ffd700',
+                                                                            color: '#1a1a2e',
+                                                                            fontSize: '0.6rem',
+                                                                            height: 20,
+                                                                            fontWeight: 700,
+                                                                        }}
+                                                                    />
+                                                                )}
                                                                 {pokemon.types.map(type => (
                                                                     <Chip
                                                                         key={type}
@@ -531,10 +508,35 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                                     />
                                                                 ))}
                                                             </Box>
+                                                            {(ownedHeldItems.length > 0 || progress.heldItem) && (
+                                                                <TextField
+                                                                    select
+                                                                    fullWidth
+                                                                    size="small"
+                                                                    variant="standard"
+                                                                    value={progress.heldItem ?? ''}
+                                                                    onChange={e => handleEquipHeldItem(pokemon.id, e.target.value as HeldItemId | '')}
+                                                                    sx={{ mt: 0.5, '& .MuiInputBase-root': { fontSize: '0.65rem' } }}
+                                                                    slotProps={{ select: { displayEmpty: true } }}
+                                                                >
+                                                                    <MenuItem value="">
+                                                                        <em>No held item</em>
+                                                                    </MenuItem>
+                                                                    {HELD_ITEM_IDS.filter(
+                                                                        id => id === progress.heldItem || availableHeldItems(profile, id) > 0
+                                                                    ).map(id => (
+                                                                        <MenuItem key={id} value={id}>
+                                                                            {HELD_ITEMS[id].name}
+                                                                            {id !== progress.heldItem ? ` (${availableHeldItems(profile, id)})` : ''}
+                                                                        </MenuItem>
+                                                                    ))}
+                                                                </TextField>
+                                                            )}
                                                         </Box>
                                                     </Card>
                                                 </Grid>
-                                            ))}
+                                                );
+                                            })}
                                             {Array.from({ length: MAX_TEAM_SIZE - team.pokemon.length }).map((_, index) => (
                                                 <Grid size={{ xs: 4, sm: 2 }} key={`empty-${index}`}>
                                                     <Card
@@ -542,13 +544,19 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                             height: '100%',
                                                             minHeight: 140,
                                                             display: 'flex',
+                                                            flexDirection: 'column',
                                                             alignItems: 'center',
                                                             justifyContent: 'center',
-                                                            backgroundColor: 'action.hover',
+                                                            gap: 0.5,
+                                                            border: '1px dashed',
+                                                            borderColor: 'divider',
+                                                            backgroundColor: 'transparent',
+                                                            boxShadow: 'none',
                                                         }}
                                                     >
-                                                        <Typography color="text.secondary">
-                                                            Empty
+                                                        <AddIcon fontSize="small" sx={{ color: 'text.disabled' }} />
+                                                        <Typography variant="caption" color="text.disabled">
+                                                            Empty slot
                                                         </Typography>
                                                     </Card>
                                                 </Grid>
@@ -556,48 +564,63 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                         </Grid>
 
                                         {team.pokemon.length > 0 && teamAnalysis[team.id] && (
-                                            <Box sx={{ mt: 2 }}>
-                                                <Typography variant="subtitle2" gutterBottom>
-                                                    Team Analysis:
-                                                </Typography>
-                                                <Box sx={{ mb: 2 }}>
-                                                    <Typography variant="body2" color="error">
-                                                        Weaknesses:
+                                            <Box
+                                                sx={{
+                                                    mt: 2,
+                                                    pt: 1.5,
+                                                    borderTop: '1px solid',
+                                                    borderColor: 'divider',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: 1,
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{ color: 'error.main', fontWeight: 700, minWidth: 72 }}
+                                                    >
+                                                        Weak to
                                                     </Typography>
-                                                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                                        {Object.entries(teamAnalysis[team.id].weaknesses).map(([type, count]) => (
+                                                    {Object.entries(teamAnalysis[team.id].weaknesses)
+                                                        .sort(([, a], [, b]) => b - a)
+                                                        .map(([type, count]) => (
                                                             <Tooltip key={type} title={`${count} Pokémon weak to ${type}`}>
                                                                 <Chip
-                                                                    label={`${type} (${count})`}
+                                                                    label={`${type} ×${count}`}
                                                                     size="small"
                                                                     sx={{
                                                                         backgroundColor: getTypeColor(type),
                                                                         color: 'white',
                                                                         textTransform: 'capitalize',
+                                                                        height: 20,
+                                                                        fontSize: '0.65rem',
                                                                     }}
                                                                 />
                                                             </Tooltip>
                                                         ))}
-                                                    </Box>
                                                 </Box>
-                                                <Box sx={{ mb: 2 }}>
-                                                    <Typography variant="body2" color="success.main">
-                                                        Coverage:
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{ color: 'success.main', fontWeight: 700, minWidth: 72 }}
+                                                    >
+                                                        Coverage
                                                     </Typography>
-                                                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                                        {teamAnalysis[team.id].coverage.superEffective.map(type => (
-                                                            <Chip
-                                                                key={type}
-                                                                label={type}
-                                                                size="small"
-                                                                sx={{
-                                                                    backgroundColor: getTypeColor(type),
-                                                                    color: 'white',
-                                                                    textTransform: 'capitalize',
-                                                                }}
-                                                            />
-                                                        ))}
-                                                    </Box>
+                                                    {teamAnalysis[team.id].coverage.superEffective.map(type => (
+                                                        <Chip
+                                                            key={type}
+                                                            label={type}
+                                                            size="small"
+                                                            sx={{
+                                                                backgroundColor: getTypeColor(type),
+                                                                color: 'white',
+                                                                textTransform: 'capitalize',
+                                                                height: 20,
+                                                                fontSize: '0.65rem',
+                                                            }}
+                                                        />
+                                                    ))}
                                                 </Box>
                                             </Box>
                                         )}
@@ -609,9 +632,20 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                 </Grid>
                 <Grid size={{ xs: 12, md: 4 }}>
                     <Paper sx={{ p: 2, height: '100%' }}>
-                        <Typography variant="h6" gutterBottom>
-                            Available Pokémon
-                        </Typography>
+                        <Tabs
+                            value={rightTab}
+                            onChange={(_, v: number) => setRightTab(v)}
+                            sx={{ mb: 2, minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}
+                        >
+                            <Tab label="Available" />
+                            <Tab
+                                label={`Box (${profile.box.length})`}
+                                icon={<CatchingPokemonIcon sx={{ fontSize: 16 }} />}
+                                iconPosition="start"
+                            />
+                        </Tabs>
+                        {rightTab === 0 && (
+                        <>
                         <Box sx={{ mb: 2 }}>
                             <TextField
                                 fullWidth
@@ -619,12 +653,14 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                 placeholder="Search Pokémon..."
                                 value={pokemonSearch}
                                 onChange={(e) => setPokemonSearch(e.target.value)}
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <SearchIcon />
-                                        </InputAdornment>
-                                    ),
+                                slotProps={{
+                                    input: {
+                                        startAdornment: (
+                                            <InputAdornment position="start">
+                                                <SearchIcon fontSize="small" />
+                                            </InputAdornment>
+                                        ),
+                                    },
                                 }}
                             />
                         </Box>
@@ -660,53 +696,79 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                         <Box sx={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
                             <Grid container spacing={1}>
                                 {filteredPokemons.map(pokemon => (
-                                    <Grid size={{ xs: 4, sm: 3, md: 6 }} key={pokemon.id}>
+                                    <Grid size={{ xs: 4, sm: 3, md: 4 }} key={pokemon.id}>
                                         <Card
                                             draggable
                                             onDragStart={() => handleDragStart(pokemon)}
                                             sx={{
+                                                position: 'relative',
                                                 cursor: 'grab',
+                                                transition: 'border-color 0.2s',
                                                 '&:hover': {
-                                                    transform: 'scale(1.05)',
-                                                    transition: 'transform 0.2s',
+                                                    borderColor: 'primary.main',
+                                                },
+                                                '&:hover .quick-add': {
+                                                    opacity: 1,
                                                 },
                                             }}
                                         >
+                                            <Tooltip title="Add to team">
+                                                <IconButton
+                                                    className="quick-add"
+                                                    size="small"
+                                                    onClick={() => handleQuickAdd(pokemon)}
+                                                    sx={{
+                                                        position: 'absolute',
+                                                        top: 2,
+                                                        right: 2,
+                                                        opacity: 0,
+                                                        transition: 'opacity 0.2s',
+                                                        zIndex: 1,
+                                                        backgroundColor: 'rgba(79, 142, 247, 0.25)',
+                                                        '&:hover': {
+                                                            backgroundColor: 'rgba(79, 142, 247, 0.45)',
+                                                        },
+                                                    }}
+                                                >
+                                                    <AddIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
                                             <CardMedia
                                                 component="img"
                                                 image={pokemon.image}
                                                 alt={pokemon.name}
                                                 sx={{
-                                                    height: 80,
+                                                    height: 64,
                                                     objectFit: 'contain',
-                                                    p: 1,
+                                                    p: 0.5,
+                                                    imageRendering: 'pixelated',
                                                 }}
                                             />
-                                            <Box sx={{ p: 1 }}>
+                                            <Box sx={{ px: 0.5, pb: 0.75 }}>
                                                 <Typography
                                                     variant="caption"
+                                                    noWrap
                                                     sx={{
                                                         textAlign: 'center',
                                                         display: 'block',
                                                         textTransform: 'capitalize',
+                                                        fontWeight: 600,
                                                     }}
                                                 >
                                                     {pokemon.name}
                                                 </Typography>
-                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                <Box sx={{ display: 'flex', gap: 0.25, justifyContent: 'center', mt: 0.25 }}>
                                                     {pokemon.types.map(type => (
-                                                        <Chip
-                                                            key={type}
-                                                            label={type}
-                                                            size="small"
-                                                            sx={{
-                                                                backgroundColor: getTypeColor(type),
-                                                                color: 'white',
-                                                                fontSize: '0.6rem',
-                                                                height: 20,
-                                                                textTransform: 'capitalize',
-                                                            }}
-                                                        />
+                                                        <Tooltip key={type} title={type} placement="top">
+                                                            <Box
+                                                                sx={{
+                                                                    width: 10,
+                                                                    height: 10,
+                                                                    borderRadius: '50%',
+                                                                    backgroundColor: getTypeColor(type),
+                                                                }}
+                                                            />
+                                                        </Tooltip>
                                                     ))}
                                                 </Box>
                                             </Box>
@@ -715,9 +777,122 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                 ))}
                             </Grid>
                         </Box>
+                        </>
+                        )}
+                        {rightTab === 1 && (
+                            <Box sx={{ maxHeight: 'calc(100vh - 260px)', overflow: 'auto' }}>
+                                {profile.box.length === 0 ? (
+                                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', my: 4 }}>
+                                        Your Box is empty. Win battles to recruit wild Pokémon,
+                                        then choose “Send to Box” to store them here.
+                                    </Typography>
+                                ) : (
+                                    <Grid container spacing={1}>
+                                        {profile.box.map((entry, boxIndex) => (
+                                            <Grid size={{ xs: 6, sm: 4, md: 6 }} key={`box-${boxIndex}-${entry.pokemon.id}`}>
+                                                <Card
+                                                    draggable
+                                                    onDragStart={() => handleDragStart(entry.pokemon, boxIndex)}
+                                                    sx={{
+                                                        position: 'relative',
+                                                        cursor: 'grab',
+                                                        border: entry.elite
+                                                            ? '1px solid rgba(255, 215, 0, 0.5)'
+                                                            : '1px solid transparent',
+                                                    }}
+                                                >
+                                                    <CardMedia
+                                                        component="img"
+                                                        image={entry.pokemon.image}
+                                                        alt={entry.pokemon.name}
+                                                        sx={{ height: 72, objectFit: 'contain', p: 0.5, imageRendering: 'pixelated' }}
+                                                    />
+                                                    <Box sx={{ px: 1, pb: 1 }}>
+                                                        <Typography
+                                                            variant="caption"
+                                                            noWrap
+                                                            sx={{ display: 'block', textAlign: 'center', textTransform: 'capitalize', fontWeight: 600 }}
+                                                        >
+                                                            {entry.shiny ? '✨ ' : ''}{entry.pokemon.name}
+                                                        </Typography>
+                                                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center', flexWrap: 'wrap', my: 0.5 }}>
+                                                            <Chip label={`Lv ${entry.level}`} size="small" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />
+                                                            {entry.elite && (
+                                                                <Chip label="ELITE" size="small" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, bgcolor: '#ffd700', color: '#1a1a2e' }} />
+                                                            )}
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                                                            <Button
+                                                                size="small"
+                                                                variant="outlined"
+                                                                sx={{ fontSize: '0.65rem', px: 1, py: 0, minWidth: 0 }}
+                                                                disabled={teams.length === 0}
+                                                                onClick={e => setBoxMenu({ anchor: e.currentTarget, boxIndex })}
+                                                            >
+                                                                Add to team
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                color="error"
+                                                                sx={{ fontSize: '0.65rem', px: 1, py: 0, minWidth: 0 }}
+                                                                onClick={() => setReleaseIndex(boxIndex)}
+                                                            >
+                                                                Release
+                                                            </Button>
+                                                        </Box>
+                                                    </Box>
+                                                </Card>
+                                            </Grid>
+                                        ))}
+                                    </Grid>
+                                )}
+                            </Box>
+                        )}
                     </Paper>
                 </Grid>
             </Grid>
+
+            {/* Box → team picker */}
+            <Menu
+                anchorEl={boxMenu?.anchor ?? null}
+                open={Boolean(boxMenu)}
+                onClose={() => setBoxMenu(null)}
+            >
+                {boxMenu !== null && teams.map(team => {
+                    const entry = profile.box[boxMenu.boxIndex];
+                    const joinable = entry !== undefined && canJoinTeam(team, entry.pokemon.id);
+                    return (
+                        <MenuItem
+                            key={team.id}
+                            disabled={!joinable}
+                            onClick={() => {
+                                handleAddFromBox(team, boxMenu.boxIndex);
+                                setBoxMenu(null);
+                            }}
+                        >
+                            {team.name} ({team.pokemon.length}/{MAX_TEAM_SIZE})
+                        </MenuItem>
+                    );
+                })}
+            </Menu>
+
+            {/* Release confirmation */}
+            <Dialog open={releaseIndex !== null} onClose={() => setReleaseIndex(null)}>
+                <DialogTitle>Release Pokémon?</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" color="text.secondary">
+                        {releaseIndex !== null && profile.box[releaseIndex]
+                            ? `${profile.box[releaseIndex].pokemon.name.charAt(0).toUpperCase()}${profile.box[releaseIndex].pokemon.name.slice(1)} will be released back into the wild. This cannot be undone.`
+                            : ''}
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setReleaseIndex(null)}>Keep</Button>
+                    <Button color="error" variant="contained" onClick={() => releaseIndex !== null && handleReleaseFromBox(releaseIndex)}>
+                        Release
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Team Suggestions Menu */}
             <Menu

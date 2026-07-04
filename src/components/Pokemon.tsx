@@ -27,8 +27,11 @@ import {
     SpeedDialAction,
     Snackbar,
     Alert,
-    ToggleButton,
-    IconButton
+    IconButton,
+    AppBar,
+    Toolbar,
+    InputAdornment,
+    Tooltip
 } from '@mui/material';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
@@ -36,12 +39,18 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import ClearIcon from '@mui/icons-material/Clear';
 import ArrowUpward from '@mui/icons-material/ArrowUpward';
 import ArrowDownward from '@mui/icons-material/ArrowDownward';
+import SearchIcon from '@mui/icons-material/Search';
+import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
+import StarsIcon from '@mui/icons-material/Stars';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import TypeEffectiveness from './TypeEffectiveness';
 import TeamBuilder from './TeamBuilder';
 import BattleSimulator from './BattleSimulator';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import type { QueryFunctionContext } from '@tanstack/react-query';
 import { useDebounce } from 'use-debounce';
+import { TYPE_EFFECTIVENESS } from '../data/typeChart';
+import { usePlayerProfile } from '../hooks/usePlayerProfile';
 
 interface PokemonStat {
     base_stat: number;
@@ -149,100 +158,6 @@ interface Team {
     pokemon: Pokemon[];
 }
 
-// Type effectiveness data
-const TYPE_EFFECTIVENESS = {
-    normal: {
-        superEffective: [],
-        notVeryEffective: ['rock', 'steel'],
-        noEffect: ['ghost'],
-    },
-    fire: {
-        superEffective: ['grass', 'ice', 'bug', 'steel'],
-        notVeryEffective: ['fire', 'water', 'rock', 'dragon'],
-        noEffect: [],
-    },
-    water: {
-        superEffective: ['fire', 'ground', 'rock'],
-        notVeryEffective: ['water', 'grass', 'dragon'],
-        noEffect: [],
-    },
-    electric: {
-        superEffective: ['water', 'flying'],
-        notVeryEffective: ['electric', 'grass', 'dragon'],
-        noEffect: ['ground'],
-    },
-    grass: {
-        superEffective: ['water', 'ground', 'rock'],
-        notVeryEffective: ['fire', 'grass', 'poison', 'flying', 'bug', 'dragon', 'steel'],
-        noEffect: [],
-    },
-    ice: {
-        superEffective: ['grass', 'ground', 'flying', 'dragon'],
-        notVeryEffective: ['fire', 'water', 'ice', 'steel'],
-        noEffect: [],
-    },
-    fighting: {
-        superEffective: ['normal', 'ice', 'rock', 'dark', 'steel'],
-        notVeryEffective: ['poison', 'flying', 'psychic', 'bug', 'fairy'],
-        noEffect: ['ghost'],
-    },
-    poison: {
-        superEffective: ['grass', 'fairy'],
-        notVeryEffective: ['poison', 'ground', 'rock', 'ghost'],
-        noEffect: ['steel'],
-    },
-    ground: {
-        superEffective: ['fire', 'electric', 'poison', 'rock', 'steel'],
-        notVeryEffective: ['grass', 'bug'],
-        noEffect: ['flying'],
-    },
-    flying: {
-        superEffective: ['grass', 'fighting', 'bug'],
-        notVeryEffective: ['electric', 'rock', 'steel'],
-        noEffect: [],
-    },
-    psychic: {
-        superEffective: ['fighting', 'poison'],
-        notVeryEffective: ['psychic', 'steel'],
-        noEffect: ['dark'],
-    },
-    bug: {
-        superEffective: ['grass', 'psychic', 'dark'],
-        notVeryEffective: ['fire', 'fighting', 'poison', 'flying', 'ghost', 'steel', 'fairy'],
-        noEffect: [],
-    },
-    rock: {
-        superEffective: ['fire', 'ice', 'flying', 'bug'],
-        notVeryEffective: ['fighting', 'ground', 'steel'],
-        noEffect: [],
-    },
-    ghost: {
-        superEffective: ['psychic', 'ghost'],
-        notVeryEffective: ['dark'],
-        noEffect: ['normal'],
-    },
-    dragon: {
-        superEffective: ['dragon'],
-        notVeryEffective: ['steel'],
-        noEffect: ['fairy'],
-    },
-    dark: {
-        superEffective: ['psychic', 'ghost'],
-        notVeryEffective: ['fighting', 'dark', 'fairy'],
-        noEffect: [],
-    },
-    steel: {
-        superEffective: ['ice', 'rock', 'fairy'],
-        notVeryEffective: ['fire', 'water', 'electric', 'steel'],
-        noEffect: [],
-    },
-    fairy: {
-        superEffective: ['fighting', 'dragon', 'dark'],
-        notVeryEffective: ['fire', 'poison', 'steel'],
-        noEffect: [],
-    },
-};
-
 // Add API functions
 const fetchPokemonDetails = async (id: number) => {
     const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
@@ -254,7 +169,7 @@ const fetchPokemonDetails = async (id: number) => {
         id: data.id,
         name: data.name,
         image: data.sprites.front_default,
-        types: data.types.map((type: any) => type.type.name),
+        types: data.types.map((type: { type: { name: string } }) => type.type.name),
         height: data.height / 10,
         weight: data.weight / 10,
         stats: data.stats,
@@ -273,7 +188,7 @@ const fetchPokemonList = async (context: QueryFunctionContext) => {
 
     // Fetch basic details for each Pokemon
     const pokemonDetails = await Promise.all(
-        data.results.map(async (pokemon: any) => {
+        data.results.map(async (pokemon: { url: string }) => {
             const id = parseInt(pokemon.url.split('/').slice(-2, -1)[0]);
             const detailsResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
             const details = await detailsResponse.json();
@@ -294,7 +209,7 @@ const fetchPokemonList = async (context: QueryFunctionContext) => {
                 id: details.id,
                 name: details.name,
                 image: details.sprites.front_default,
-                types: details.types.map((type: any) => type.type.name),
+                types: details.types.map((type: { type: { name: string } }) => type.type.name),
                 height: details.height / 10,
                 weight: details.weight / 10,
                 stats: details.stats,
@@ -316,7 +231,7 @@ const fetchSpecialPokemon = async () => {
     const data = await response.json();
 
     const specialPokemon = await Promise.all(
-        data.results.map(async (pokemon: any) => {
+        data.results.map(async (pokemon: { url: string }) => {
             const id = parseInt(pokemon.url.split('/').slice(-2, -1)[0]);
             const details = await fetchPokemonDetails(id);
             return details.is_legendary || details.is_mythical ? details : null;
@@ -326,12 +241,58 @@ const fetchSpecialPokemon = async () => {
     return specialPokemon.filter((p): p is Pokemon => p !== null);
 };
 
+// Full name → id index (one lightweight request, cached for the session) so
+// search can find any Pokémon, not just the pages already scrolled into view.
+let pokemonNameIndex: Promise<{ name: string; id: number }[]> | null = null;
+const getPokemonNameIndex = () => {
+    if (!pokemonNameIndex) {
+        pokemonNameIndex = fetch('https://pokeapi.co/api/v2/pokemon?limit=10000')
+            .then(res => res.json())
+            .then((data: PokemonListResponse) =>
+                data.results
+                    .map(entry => ({
+                        name: entry.name,
+                        id: parseInt(entry.url.split('/').slice(-2, -1)[0]),
+                    }))
+                    // ids above 10000 are alternate forms (megas, gmax, regionals)
+                    // whose species endpoints 404 — keep base forms only
+                    .filter(entry => entry.id <= 10000)
+            )
+            .catch(err => {
+                pokemonNameIndex = null; // allow retry after a network hiccup
+                throw err;
+            });
+    }
+    return pokemonNameIndex;
+};
+
+const MAX_SEARCH_RESULTS = 24;
+
+const searchPokemonByName = async (term: string): Promise<Pokemon[]> => {
+    const index = await getPokemonNameIndex();
+    const query = term.toLowerCase().trim();
+    const matches = index
+        .filter(entry => entry.name.includes(query))
+        // exact/prefix matches first, then dex order
+        .sort((a, b) => {
+            const aRank = a.name === query ? 0 : a.name.startsWith(query) ? 1 : 2;
+            const bRank = b.name === query ? 0 : b.name.startsWith(query) ? 1 : 2;
+            return aRank - bRank || a.id - b.id;
+        })
+        .slice(0, MAX_SEARCH_RESULTS);
+    // One flaky detail fetch shouldn't sink the whole result set
+    const settled = await Promise.allSettled(matches.map(match => fetchPokemonDetails(match.id)));
+    return settled
+        .filter(result => result.status === 'fulfilled')
+        .map(result => result.value);
+};
+
 const Pokemon: React.FC = () => {
     const [pokemons, setPokemons] = useState<Pokemon[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [page, setPage] = useState(1);
-    const [hasMore, setHasMore] = useState(true);
+    const [page] = useState(1);
+    const [, setHasMore] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedType, setSelectedType] = useState<string>('all');
     const [sortField, setSortField] = useState<SortField>('name');
@@ -347,9 +308,12 @@ const Pokemon: React.FC = () => {
     const [snackbarMessage, setSnackbarMessage] = useState('');
     const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
     const [selectedTypesForCalculator, setSelectedTypesForCalculator] = useState<string[]>([]);
-    const observer = useRef<IntersectionObserver>();
+    const observer = useRef<IntersectionObserver | undefined>(undefined);
     const POKEMONS_PER_PAGE = 151;
     const [mainTab, setMainTab] = useState(0);
+    // Single owner of the player profile — TeamBuilder and BattleSimulator
+    // share this instance so box/XP/held-item changes stay in sync.
+    const { profile, updateProfile } = usePlayerProfile();
     const [teams, setTeams] = useState<Team[]>(() => {
         const savedTeams = localStorage.getItem('pokemonTeams');
         return savedTeams ? JSON.parse(savedTeams) : [];
@@ -357,7 +321,6 @@ const Pokemon: React.FC = () => {
     const [showLegendaries, setShowLegendaries] = useState(false);
     const [showMythicals, setShowMythicals] = useState(false);
     const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
-    const queryClient = useQueryClient();
 
     // Use React Query for Pokemon list with infinite scroll
     const {
@@ -368,7 +331,9 @@ const Pokemon: React.FC = () => {
         isLoading,
         isError,
     } = useInfiniteQuery({
-        queryKey: ['pokemons', debouncedSearchTerm, selectedType],
+        // NOTE: fetchPokemonList only paginates — search/type filtering happens
+        // client-side (or via the pokemonSearch query), so they don't belong in this key.
+        queryKey: ['pokemons'],
         queryFn: (context) => fetchPokemonList(context),
         getNextPageParam: (lastPage) => lastPage.nextPage,
         initialPageParam: 1,
@@ -382,6 +347,15 @@ const Pokemon: React.FC = () => {
         enabled: showLegendaries || showMythicals,
         staleTime: 1000 * 60 * 60 * 24, // 24 hours
         gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
+    });
+
+    // Server-backed name search: covers the whole Pokédex, not just loaded pages
+    const searchActive = debouncedSearchTerm.trim().length >= 2;
+    const { data: searchResults, isFetching: isSearching } = useQuery({
+        queryKey: ['pokemonSearch', debouncedSearchTerm.trim().toLowerCase()],
+        queryFn: () => searchPokemonByName(debouncedSearchTerm),
+        enabled: searchActive,
+        staleTime: 1000 * 60 * 60, // names/details are static — cache for an hour
     });
 
     const lastPokemonRef = useCallback((node: HTMLDivElement) => {
@@ -472,11 +446,16 @@ const Pokemon: React.FC = () => {
 
     useEffect(() => {
         fetchPokemons(page);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page]);
 
     // Update the filteredPokemons memo
     const filteredPokemons = React.useMemo(() => {
-        let filtered = pokemonData?.pages.flatMap(page => page.pokemons) || [];
+        // Active search pulls from the full-Pokédex search results; otherwise
+        // the infinite list (with client-side filtering) is the source.
+        let filtered = searchActive
+            ? searchResults ?? []
+            : pokemonData?.pages.flatMap(page => page.pokemons) || [];
 
         // Apply filters
         if (showFavoritesOnly) {
@@ -497,7 +476,10 @@ const Pokemon: React.FC = () => {
         }
 
         if (showLegendaries || showMythicals) {
-            filtered = specialPokemon || [];
+            // When searching, narrow the search results; otherwise show the special list
+            if (!searchActive) {
+                filtered = specialPokemon || [];
+            }
             if (showLegendaries) {
                 filtered = filtered.filter(pokemon => pokemon.is_legendary);
             }
@@ -535,7 +517,7 @@ const Pokemon: React.FC = () => {
                     comparison = (a.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'speed')?.base_stat || 0) -
                                 (b.stats.find((s: { stat: { name: string; }; }) => s.stat.name === 'speed')?.base_stat || 0);
                     break;
-                case 'type':
+                case 'type': {
                     // Sort by primary type first, then secondary type if available
                     const typeA = a.types[0];
                     const typeB = b.types[0];
@@ -544,12 +526,13 @@ const Pokemon: React.FC = () => {
                         comparison = a.types[1].localeCompare(b.types[1]);
                     }
                     break;
+                }
             }
             return sortOrder === 'asc' ? comparison : -comparison;
         });
 
         return filtered;
-    }, [pokemonData, debouncedSearchTerm, selectedType, sortField, sortOrder, favorites, showFavoritesOnly, showLegendaries, showMythicals, specialPokemon]);
+    }, [pokemonData, searchActive, searchResults, debouncedSearchTerm, selectedType, sortField, sortOrder, favorites, showFavoritesOnly, showLegendaries, showMythicals, specialPokemon]);
 
     // Get unique types for filter
 
@@ -611,7 +594,7 @@ const Pokemon: React.FC = () => {
 
             // Fetch details for each variety
             const formDetails = await Promise.all(
-                varieties.map(async (variety: any) => {
+                varieties.map(async (variety: { pokemon: { url: string }; is_default: boolean }) => {
                     try {
                         const response = await fetch(variety.pokemon.url);
                         const data = await response.json();
@@ -649,10 +632,9 @@ const Pokemon: React.FC = () => {
     const handlePokemonClick = async (pokemon: Pokemon) => {
         setSelectedPokemon(pokemon);
         setActiveTab(0);
-        // Fetch species URL to get evolution chain
-        const speciesResponse = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${pokemon.id}`);
-        const speciesData = await speciesResponse.json();
-        await fetchEvolutionChain(speciesData.evolution_chain.url);
+        setEvolutionChain(null); // don't show the previous Pokémon's chain while loading
+        // fetchEvolutionChain resolves species → evolution chain itself
+        await fetchEvolutionChain(`https://pokeapi.co/api/v2/pokemon-species/${pokemon.id}`);
         await fetchPokemonForms(pokemon.id);
     };
 
@@ -674,7 +656,7 @@ const Pokemon: React.FC = () => {
                         </Typography>
                         {chain.evolution_details && chain.evolution_details.length > 0 && (
                             <Typography variant="caption" color="text.secondary">
-                                {chain.evolution_details.map((detail, _index) => {
+                                {chain.evolution_details.map((detail) => {
                                     const trigger = detail.trigger.name.replace('-', ' ');
                                     const level = detail.min_level ? ` at level ${detail.min_level}` : '';
                                     const item = detail.item ? ` using ${detail.item.name.replace('-', ' ')}` : '';
@@ -684,7 +666,7 @@ const Pokemon: React.FC = () => {
                         )}
                         {chain.pokemon?.types && (
                             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                                {chain.pokemon.types.map((type: any) => (
+                                {chain.pokemon.types.map((type: { type: { name: string } }) => (
                                     <Chip
                                         key={type.type.name}
                                         label={type.type.name}
@@ -703,12 +685,14 @@ const Pokemon: React.FC = () => {
                 {chain.evolves_to.length > 0 && (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Typography sx={{ color: 'text.secondary' }}>→</Typography>
-                        {chain.evolves_to.map((evolution, index) => (
-                            <React.Fragment key={`${currentKey}-${index}`}>
-                                {index > 0 && <Typography sx={{ color: 'text.secondary' }}>→</Typography>}
-                                {renderEvolutionChain(evolution, currentKey)}
-                            </React.Fragment>
-                        ))}
+                        {/* Branching evolutions (e.g. Eevee) stack vertically */}
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {chain.evolves_to.map((evolution, index) => (
+                                <React.Fragment key={`${currentKey}-${index}`}>
+                                    {renderEvolutionChain(evolution, `${currentKey}-${index}`)}
+                                </React.Fragment>
+                            ))}
+                        </Box>
                     </Box>
                 )}
             </Box>
@@ -750,7 +734,7 @@ const Pokemon: React.FC = () => {
 
                 <Tabs
                     value={activeTab}
-                    onChange={(_: any, newValue: React.SetStateAction<number>) => setActiveTab(newValue)}
+                    onChange={(_: React.SyntheticEvent, newValue: number) => setActiveTab(newValue)}
                     sx={{ mb: 3 }}
                 >
                     <Tab label="Details" />
@@ -843,7 +827,8 @@ const Pokemon: React.FC = () => {
                                 borderRadius: 2,
                                 bgcolor: 'background.paper',
                                 border: '1px solid',
-                                borderColor: 'divider'
+                                borderColor: 'divider',
+                                overflowX: 'auto',
                             }}>
                                 {renderEvolutionChain(evolutionChain)}
                             </Box>
@@ -891,7 +876,7 @@ const Pokemon: React.FC = () => {
                                                     ).join(' ')}
                                                 </Typography>
                                                 <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 1 }}>
-                                                    {form.types.map((type: any) => (
+                                                    {form.types.map((type: { type: { name: string } }) => (
                                                         <Chip
                                                             key={type.type.name}
                                                             label={type.type.name}
@@ -959,6 +944,29 @@ const Pokemon: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('pokemonTeams', JSON.stringify(teams));
     }, [teams]);
+
+    // Recruited Pokémon from battles join an existing team (6-mon cap)
+    const handleAddPokemonToTeam = (teamId: string, pokemon: Pokemon) => {
+        setTeams(prev =>
+            prev.map(team =>
+                team.id === teamId && team.pokemon.length < 6
+                    ? { ...team, pokemon: [...team.pokemon, pokemon] }
+                    : team
+            )
+        );
+        setSnackbarMessage(`${pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)} joined your team!`);
+        setSnackbarOpen(true);
+    };
+
+    // Evolution from battles replaces the species in every saved team
+    const handleEvolvePokemon = (oldId: number, newPokemon: Pokemon) => {
+        setTeams(prev =>
+            prev.map(team => ({
+                ...team,
+                pokemon: team.pokemon.map(p => (p.id === oldId ? newPokemon : p)),
+            }))
+        );
+    };
 
     const toggleFavorite = (pokemonId: number, event: React.MouseEvent) => {
         event.stopPropagation();
@@ -1094,197 +1102,152 @@ const Pokemon: React.FC = () => {
     }
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4, pb: compareList.length === 2 ? 40 : 4 }}>
-            <Paper
-                elevation={3}
-                sx={{
-                    p: 4,
-                    mb: 4,
-                    background: 'linear-gradient(45deg, #4A90E2 30%, #9B59B6 90%)',
-                    borderRadius: '20px',
-                }}
-            >
-                <Typography
-                    variant="h3"
-                    component="h1"
-                    gutterBottom
-                    align="center"
-                    sx={{
-                        color: 'white',
-                        textShadow: '0 0 10px rgba(74, 144, 226, 0.5)',
-                        mb: 2,
-                    }}
-                >
-                    Pokémon Collection
-                </Typography>
-                <Typography
-                    variant="h6"
-                    align="center"
-                    sx={{
-                        color: 'white',
-                        opacity: 0.9,
-                    }}
-                >
-                    Discover and learn about different Pokémon
-                </Typography>
-            </Paper>
+        <Box sx={{ minHeight: '100vh' }}>
+            <AppBar position="sticky">
+                <Toolbar sx={{ gap: 1.5, minHeight: { xs: 56, sm: 64 } }}>
+                    <CatchingPokemonIcon sx={{ color: 'primary.main', fontSize: 28 }} />
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff', mr: 2 }}>
+                        Pokédex
+                    </Typography>
+                    <Tabs
+                        value={mainTab}
+                        onChange={(_: React.SyntheticEvent, newValue: number) => setMainTab(newValue)}
+                        variant="scrollable"
+                        allowScrollButtonsMobile
+                        sx={{
+                            minHeight: { xs: 56, sm: 64 },
+                            '& .MuiTab-root': { minHeight: { xs: 56, sm: 64 } },
+                        }}
+                    >
+                        <Tab label="Pokédex" />
+                        <Tab label="Team Builder" />
+                        <Tab label="Type Calculator" />
+                        <Tab label="Battle" />
+                    </Tabs>
+                </Toolbar>
+            </AppBar>
 
-            <Paper sx={{ mb: 3 }}>
-                <Tabs
-                    value={mainTab}
-                    onChange={(_: any, newValue: React.SetStateAction<number>) => setMainTab(newValue)}
-                    variant="fullWidth"
-                    sx={{
-                        borderBottom: 1,
-                        borderColor: 'divider',
-                        '& .MuiTab-root': {
-                            py: 2,
-                        },
-                    }}
-                >
-                    <Tab label="Pokédex" />
-                    <Tab label="Team Builder" />
-                    <Tab label="Type Calculator" />
-                    <Tab label="Battle Simulator" />
-                </Tabs>
-            </Paper>
+            <Container maxWidth="xl" sx={{ py: 3, pb: compareList.length === 2 ? 40 : 6 }}>
 
             {mainTab === 0 && (
                 <>
                     {/* Search and Filter Controls */}
-                    <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-                        <Box sx={{
+                    <Paper
+                        sx={{
+                            p: 1.5,
+                            mb: 3,
                             display: 'flex',
-                            gap: 2,
+                            gap: 1.5,
                             flexWrap: 'wrap',
                             alignItems: 'center',
-                            width: '100%',
-                            '& .MuiFormControl-root': {
-                                flex: 1,
-                                minWidth: { xs: '100%', sm: 120 },
-                                maxWidth: { sm: 200 }
-                            },
-                            '& .MuiTextField-root': {
-                                flex: 2,
-                                minWidth: { xs: '100%', sm: 200 }
-                            }
-                        }}>
-                            <TextField
-                                label="Search Pokémon"
-                                variant="outlined"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                size="small"
-                            />
-                            <FormControl size="small">
-                                <InputLabel>Type</InputLabel>
-                                <Select
-                                    value={selectedType}
-                                    onChange={(e) => setSelectedType(e.target.value)}
-                                    label="Type"
-                                >
-                                    <MenuItem value="all">All Types</MenuItem>
-                                    {Array.from(new Set(pokemonData?.pages.flatMap(page =>
-                                        page.pokemons.flatMap(p => p.types)
-                                    ) || [])).sort().map((type) => (
-                                        <MenuItem key={type} value={type}>
+                            position: 'sticky',
+                            top: { xs: 64, sm: 74 },
+                            zIndex: 10,
+                            backgroundColor: 'rgba(19, 26, 43, 0.88)',
+                            backdropFilter: 'blur(12px)',
+                        }}
+                    >
+                        <TextField
+                            placeholder="Search Pokémon…"
+                            variant="outlined"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            size="small"
+                            slotProps={{
+                                input: {
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                                        </InputAdornment>
+                                    ),
+                                },
+                            }}
+                            sx={{ flex: '1 1 200px', maxWidth: { sm: 320 } }}
+                        />
+                        <FormControl size="small" sx={{ minWidth: 130 }}>
+                            <InputLabel>Type</InputLabel>
+                            <Select
+                                value={selectedType}
+                                onChange={(e) => setSelectedType(e.target.value)}
+                                label="Type"
+                            >
+                                <MenuItem value="all">All Types</MenuItem>
+                                {Array.from(new Set(pokemonData?.pages.flatMap(page =>
+                                    page.pokemons.flatMap(p => p.types)
+                                ) || [])).sort().map((type) => (
+                                    <MenuItem key={type} value={type}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: getTypeColor(type) }} />
                                             {type.charAt(0).toUpperCase() + type.slice(1)}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                            <FormControl size="small">
-                                <InputLabel>Sort By</InputLabel>
-                                <Select
-                                    value={sortField}
-                                    onChange={(e) => setSortField(e.target.value as SortField)}
-                                    label="Sort By"
-                                >
-                                    <MenuItem value="name">Name</MenuItem>
-                                    <MenuItem value="type">Type</MenuItem>
-                                    <MenuItem value="height">Height</MenuItem>
-                                    <MenuItem value="weight">Weight</MenuItem>
-                                    <MenuItem value="hp">HP</MenuItem>
-                                    <MenuItem value="attack">Attack</MenuItem>
-                                    <MenuItem value="defense">Defense</MenuItem>
-                                    <MenuItem value="speed">Speed</MenuItem>
-                                </Select>
-                            </FormControl>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <InputLabel>Sort By</InputLabel>
+                            <Select
+                                value={sortField}
+                                onChange={(e) => setSortField(e.target.value as SortField)}
+                                label="Sort By"
+                            >
+                                <MenuItem value="name">Name</MenuItem>
+                                <MenuItem value="type">Type</MenuItem>
+                                <MenuItem value="height">Height</MenuItem>
+                                <MenuItem value="weight">Weight</MenuItem>
+                                <MenuItem value="hp">HP</MenuItem>
+                                <MenuItem value="attack">Attack</MenuItem>
+                                <MenuItem value="defense">Defense</MenuItem>
+                                <MenuItem value="speed">Speed</MenuItem>
+                            </Select>
+                        </FormControl>
+                        <Tooltip title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}>
                             <IconButton
                                 onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
                                 color="primary"
                                 size="small"
+                                sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
                             >
-                                {sortOrder === 'asc' ? <ArrowUpward /> : <ArrowDownward />}
+                                {sortOrder === 'asc' ? <ArrowUpward fontSize="small" /> : <ArrowDownward fontSize="small" />}
                             </IconButton>
-                            <ToggleButton
-                                value="favorites"
-                                selected={showFavoritesOnly}
-                                onChange={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                                color="primary"
-                                size="small"
-                                sx={{
-                                    borderRadius: 1,
-                                    minWidth: { xs: '100%', sm: 'auto' },
-                                    '&.Mui-selected': {
-                                        backgroundColor: 'primary.main',
-                                        color: 'white',
-                                        '&:hover': {
-                                            backgroundColor: 'primary.dark',
-                                        },
-                                    },
-                                }}
-                            >
-                                <FavoriteIcon sx={{ mr: 1 }} />
-                                Favorites Only
-                            </ToggleButton>
-                            <ToggleButton
-                                value="legendary"
-                                selected={showLegendaries}
-                                onChange={() => setShowLegendaries(!showLegendaries)}
-                                color="primary"
-                                size="small"
-                                sx={{
-                                    borderRadius: 1,
-                                    minWidth: { xs: '100%', sm: 'auto' },
-                                    '&.Mui-selected': {
-                                        backgroundColor: 'primary.main',
-                                        color: 'white',
-                                        '&:hover': {
-                                            backgroundColor: 'primary.dark',
-                                        },
-                                    },
-                                }}
-                            >
-                                Legendary
-                            </ToggleButton>
-                            <ToggleButton
-                                value="mythical"
-                                selected={showMythicals}
-                                onChange={() => setShowMythicals(!showMythicals)}
-                                color="primary"
-                                size="small"
-                                sx={{
-                                    borderRadius: 1,
-                                    minWidth: { xs: '100%', sm: 'auto' },
-                                    '&.Mui-selected': {
-                                        backgroundColor: 'primary.main',
-                                        color: 'white',
-                                        '&:hover': {
-                                            backgroundColor: 'primary.dark',
-                                        },
-                                    },
-                                }}
-                            >
-                                Mythical
-                            </ToggleButton>
-                        </Box>
-                        {showFavoritesOnly && filteredPokemons.length === 0 && (
-                            <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-                                No favorite Pokémon yet. Click the heart icon on a Pokémon card to add it to your favorites!
-                            </Typography>
-                        )}
-                    </Box>
+                        </Tooltip>
+                        <Box sx={{ flexGrow: 1 }} />
+                        <Chip
+                            icon={<FavoriteIcon />}
+                            label="Favorites"
+                            clickable
+                            color={showFavoritesOnly ? 'primary' : 'default'}
+                            variant={showFavoritesOnly ? 'filled' : 'outlined'}
+                            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                        />
+                        <Chip
+                            icon={<StarsIcon />}
+                            label="Legendary"
+                            clickable
+                            color={showLegendaries ? 'primary' : 'default'}
+                            variant={showLegendaries ? 'filled' : 'outlined'}
+                            onClick={() => setShowLegendaries(!showLegendaries)}
+                        />
+                        <Chip
+                            icon={<AutoAwesomeIcon />}
+                            label="Mythical"
+                            clickable
+                            color={showMythicals ? 'primary' : 'default'}
+                            variant={showMythicals ? 'filled' : 'outlined'}
+                            onClick={() => setShowMythicals(!showMythicals)}
+                        />
+                    </Paper>
+                    {showFavoritesOnly && filteredPokemons.length === 0 && (
+                        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                            No favorite Pokémon yet. Click the heart icon on a Pokémon card to add it to your favorites!
+                        </Typography>
+                    )}
+
+                    {searchActive && !isSearching && filteredPokemons.length === 0 && !showFavoritesOnly && (
+                        <Typography color="text.secondary" sx={{ textAlign: 'center', my: 4 }}>
+                            No Pokémon match “{debouncedSearchTerm.trim()}”.
+                        </Typography>
+                    )}
 
                     {/* Pokemon Grid */}
                     <Grid container spacing={3}>
@@ -1301,17 +1264,16 @@ const Pokemon: React.FC = () => {
                                         height: '100%',
                                         display: 'flex',
                                         flexDirection: 'column',
-                                        transition: 'all 0.3s ease-in-out',
+                                        transition: 'transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
                                         cursor: 'pointer',
                                         '&:hover': {
-                                            transform: 'translateY(-8px) scale(1.02)',
-                                            boxShadow: '0 12px 24px rgba(74, 144, 226, 0.2)',
+                                            transform: 'translateY(-4px)',
+                                            borderColor: 'primary.main',
+                                            boxShadow: '0 12px 28px rgba(0, 0, 0, 0.35)',
                                         },
-                                        background: 'rgba(22, 33, 62, 0.8)',
-                                        backdropFilter: 'blur(10px)',
                                         border: compareList.find(p => p.id === pokemon.id)
-                                            ? '2px solid #4A90E2'
-                                            : '1px solid rgba(74, 144, 226, 0.2)',
+                                            ? '2px solid #4f8ef7'
+                                            : undefined,
                                     }}
                                 >
                                     <IconButton
@@ -1329,28 +1291,40 @@ const Pokemon: React.FC = () => {
                                             <FavoriteBorderIcon />
                                         )}
                                     </IconButton>
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            position: 'absolute',
+                                            top: 12,
+                                            left: 14,
+                                            color: 'text.secondary',
+                                            fontWeight: 700,
+                                            letterSpacing: '0.05em',
+                                        }}
+                                    >
+                                        #{String(pokemon.id).padStart(3, '0')}
+                                    </Typography>
                                     <CardMedia
                                         component="img"
-                                        height="200"
+                                        height="180"
                                         image={pokemon.image}
                                         alt={pokemon.name}
                                         sx={{
                                             objectFit: 'contain',
                                             p: 2,
-                                            background: 'linear-gradient(180deg, rgba(74, 144, 226, 0.1) 0%, rgba(155, 89, 182, 0.1) 100%)',
+                                            imageRendering: 'pixelated',
+                                            background: `radial-gradient(circle at 50% 55%, ${getTypeColor(pokemon.types[0])}2e 0%, transparent 68%)`,
                                         }}
                                     />
-                                    <CardContent sx={{ flexGrow: 1 }}>
+                                    <CardContent sx={{ flexGrow: 1, pt: 1 }}>
                                         <Typography
                                             gutterBottom
-                                            variant="h5"
+                                            variant="h6"
                                             component="div"
                                             sx={{
                                                 textTransform: 'capitalize',
-                                                color: 'primary.main',
-                                                fontWeight: 'bold',
+                                                fontWeight: 700,
                                                 textAlign: 'center',
-                                                textShadow: '0 0 5px rgba(74, 144, 226, 0.3)',
                                             }}
                                         >
                                             {pokemon.name}
@@ -1397,7 +1371,7 @@ const Pokemon: React.FC = () => {
                                                 Height: {pokemon.height}m | Weight: {pokemon.weight}kg
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                                Abilities: {pokemon.abilities.map((a: { ability: { name: any; }; }) => a.ability.name).join(', ')}
+                                                Abilities: {pokemon.abilities.map((a: { ability: { name: string } }) => a.ability.name).join(', ')}
                                             </Typography>
                                         </Box>
 
@@ -1444,6 +1418,8 @@ const Pokemon: React.FC = () => {
                     getTypeColor={getTypeColor}
                     teams={teams}
                     onTeamsChange={setTeams}
+                    profile={profile}
+                    updateProfile={updateProfile}
                 />
             )}
 
@@ -1458,8 +1434,13 @@ const Pokemon: React.FC = () => {
             {mainTab === 3 && (
                 <BattleSimulator
                     teams={teams}
+                    pokemons={pokemons}
                     getTypeColor={getTypeColor}
                     typeEffectiveness={TYPE_EFFECTIVENESS}
+                    onAddPokemonToTeam={handleAddPokemonToTeam}
+                    onEvolvePokemon={handleEvolvePokemon}
+                    profile={profile}
+                    updateProfile={updateProfile}
                 />
             )}
 
@@ -1514,7 +1495,7 @@ const Pokemon: React.FC = () => {
                 </Alert>
             </Snackbar>
 
-            {isLoading && (
+            {(isLoading || isSearching) && (
                 <Box display="flex" justifyContent="center" sx={{ mt: 4 }}>
                     <CircularProgress sx={{ color: 'primary.main' }} />
                 </Box>
@@ -1531,7 +1512,8 @@ const Pokemon: React.FC = () => {
                     </Typography>
                 </Box>
             )}
-        </Container>
+            </Container>
+        </Box>
     );
 };
 

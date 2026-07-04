@@ -1,0 +1,605 @@
+import React, { Suspense, useMemo, useRef } from 'react';
+import * as THREE from 'three';
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
+import { CameraShake } from '@react-three/drei';
+import type { BattleMon, TeamId, WeatherType } from '../../utils/battleEngine';
+import type { TerrainType } from '../../types/terrain';
+import type { MoveAnimation } from '../../utils/moveAnimationHelper';
+import { criticalOverlay, getMoveAnimation } from '../../utils/moveAnimationHelper';
+import { spriteFallbacks } from '../../utils/spriteSources';
+import { useAnimatedTexture } from '../../hooks/useAnimatedTexture';
+import TerrainParticles from './TerrainParticles';
+
+export interface SceneFx {
+    id: number;
+    attackerTeam: TeamId;
+    moveType: string;
+    isCritical: boolean;
+    isDamaging: boolean;
+}
+
+interface BattleScene3DProps {
+    leftMon: BattleMon | null;
+    rightMon: BattleMon | null;
+    weather: WeatherType;
+    terrain: TerrainType;
+    fx: SceneFx | null;
+    getTypeColor: (type: string) => string;
+    /** Battle background image URL (gen-6 scene); null → abstract sky/floor. */
+    backdrop?: string | null;
+}
+
+// Over-the-shoulder framing: the player's mon stands near the camera
+// showing its back sprite; the enemy faces us from across the arena.
+const PLAYER_SCALE = 2.4;
+const ENEMY_SCALE = 2.7;
+const PLAYER_POS: [number, number, number] = [-2.6, PLAYER_SCALE / 2 - 0.15, 1.3];
+const ENEMY_POS: [number, number, number] = [2.4, ENEMY_SCALE / 2 - 0.1, -1.2];
+
+const TERRAIN_COLORS: Record<TerrainType, string> = {
+    none: '#3d5a3d',
+    electric: '#8a7a1f',
+    grassy: '#2e7d32',
+    misty: '#7e6a9e',
+    psychic: '#6a3d8a',
+};
+
+const WEATHER_FOG: Record<WeatherType, { color: string; density: number }> = {
+    none: { color: '#0b1026', density: 0.02 },
+    rain: { color: '#16223d', density: 0.045 },
+    sunny: { color: '#3d2c14', density: 0.015 },
+    sandstorm: { color: '#5a4a24', density: 0.06 },
+    hail: { color: '#2a3a4d', density: 0.045 },
+};
+
+const SKY_GRADIENTS: Record<WeatherType, [string, string]> = {
+    none: ['#24397a', '#0b1026'],
+    rain: ['#2c3d5e', '#101a2e'],
+    sunny: ['#c98a3d', '#3d2c14'],
+    sandstorm: ['#8a713a', '#5a4a24'],
+    hail: ['#4a6076', '#2a3a4d'],
+};
+
+const SkyDome: React.FC<{ weather: WeatherType }> = ({ weather }) => {
+    const texture = useMemo(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 4;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            const [top, bottom] = SKY_GRADIENTS[weather];
+            const grad = ctx.createLinearGradient(0, 0, 0, 256);
+            grad.addColorStop(0, top);
+            grad.addColorStop(1, bottom);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 4, 256);
+        }
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+    }, [weather]);
+
+    return (
+        <mesh>
+            <sphereGeometry args={[40, 24, 16]} />
+            <meshBasicMaterial map={texture} side={THREE.BackSide} fog={false} depthWrite={false} toneMapped={false} />
+        </mesh>
+    );
+};
+
+// Shared radial-gradient texture so glows and shadows fade out at the
+// edges instead of rendering as hard-edged discs.
+let radialTexture: THREE.CanvasTexture | null = null;
+const getRadialTexture = (): THREE.CanvasTexture => {
+    if (!radialTexture) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+            grad.addColorStop(0.7, 'rgba(255,255,255,0.12)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 128, 128);
+        }
+        radialTexture = new THREE.CanvasTexture(canvas);
+    }
+    return radialTexture;
+};
+
+// Weather mood multiplied onto the backdrop image (white = untouched)
+const BACKDROP_WEATHER_TINT: Record<WeatherType, string> = {
+    none: '#ffffff',
+    sunny: '#fff3dd',
+    rain: '#7d8fb3',
+    sandstorm: '#c2a36b',
+    hail: '#a8c4d8',
+};
+
+const BACKDROP_DISTANCE = 20; // along the camera's view axis, behind the enemy
+const BACKDROP_IMAGE_ASPECT = 800 / 480;
+
+/**
+ * A gen-6 battle scene image filling the camera frustum behind the arena.
+ * Positioned along the camera's view axis (the camera is tilted toward the
+ * origin) and sized "cover"-style: the image keeps its aspect ratio and
+ * overfills the frustum. The painted battlefield ground in the image becomes
+ * the visual floor; sprites, shadows, particles and FX all draw on top.
+ */
+const Backdrop: React.FC<{ url: string; weather: WeatherType }> = ({ url, weather }) => {
+    const texture = useLoader(THREE.TextureLoader, url);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const { camera, size } = useThree();
+
+    const placement = useMemo(() => {
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        const position = camera.position.clone().add(direction.multiplyScalar(BACKDROP_DISTANCE));
+        const quaternion = camera.quaternion.clone();
+
+        const fov = (camera as THREE.PerspectiveCamera).fov ?? 40;
+        const frustumHeight = 2 * Math.tan((fov * Math.PI) / 360) * BACKDROP_DISTANCE;
+        const frustumWidth = frustumHeight * (size.width / Math.max(1, size.height));
+        // Cover: keep the image aspect, overfill the frustum (crop, never stretch)
+        const height = Math.max(frustumHeight, frustumWidth / BACKDROP_IMAGE_ASPECT) * 1.06;
+        const width = height * BACKDROP_IMAGE_ASPECT;
+        return { position, quaternion, width, height };
+    }, [camera, size.width, size.height]);
+
+    return (
+        <mesh position={placement.position} quaternion={placement.quaternion} renderOrder={-1}>
+            <planeGeometry args={[placement.width, placement.height]} />
+            <meshBasicMaterial
+                map={texture}
+                color={BACKDROP_WEATHER_TINT[weather]}
+                fog={false}
+                depthWrite={false}
+                toneMapped={false}
+            />
+        </mesh>
+    );
+};
+
+interface SpriteProps {
+    mon: BattleMon;
+    position: [number, number, number];
+    /** Lunge direction along x (1 = toward the right/enemy, -1 = toward the player). */
+    facing: 1 | -1;
+    side: TeamId;
+    scale: number;
+    fx: SceneFx | null;
+    glowColor: string;
+}
+
+const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, scale, fx, glowColor }) => {
+    const spriteUrls = useMemo(
+        () => spriteFallbacks(mon.pokemon.id, side === 1 ? 'back' : 'front', mon.pokemon.image, mon.shiny ?? false),
+        [mon.pokemon.id, mon.pokemon.image, mon.shiny, side]
+    );
+    const { texture, aspect } = useAnimatedTexture(spriteUrls);
+
+    const groupRef = useRef<THREE.Group>(null);
+    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const fxStart = useRef<number>(0);
+    const lastFxId = useRef<number>(-1);
+    const faintProgress = useRef<number>(0);
+    const phase = useMemo(() => Math.random() * Math.PI * 2, []);
+
+    const isFainted = mon.currentHp <= 0;
+    const isAttacker = fx !== null && fx.attackerTeam === mon.team;
+    const isDefender = fx !== null && fx.attackerTeam !== mon.team && fx.isDamaging;
+
+    useFrame(({ clock }) => {
+        const group = groupRef.current;
+        const mat = matRef.current;
+        if (!group || !mat) return;
+        const t = clock.getElapsedTime();
+
+        if (fx && fx.id !== lastFxId.current) {
+            lastFxId.current = fx.id;
+            fxStart.current = t;
+        }
+        const fxElapsed = fx ? t - fxStart.current : 99;
+
+        // Faint: sink + fade out
+        if (isFainted) {
+            faintProgress.current = Math.min(1, faintProgress.current + 0.02);
+        } else {
+            faintProgress.current = Math.max(0, faintProgress.current - 0.1);
+        }
+        const faint = faintProgress.current;
+        const sink = scale / 2;
+
+        let x = position[0];
+        let z = position[2];
+        const y = position[1] + Math.sin(t * 2 + phase) * 0.07;
+        let tint = 0xffffff;
+
+        // Attack lunge toward the opponent (diagonal, since the sides now sit at different depths)
+        if (isAttacker && fxElapsed < 0.45) {
+            const p = fxElapsed / 0.45;
+            const lunge = Math.sin(p * Math.PI);
+            x += lunge * 1.1 * facing;
+            z += lunge * 0.8 * -facing;
+        }
+
+        // Hit reaction: shake + red flash
+        if (isDefender && fxElapsed > 0.25 && fxElapsed < 0.8) {
+            x += Math.sin(fxElapsed * 60) * 0.09;
+            tint = 0xff5555;
+        }
+
+        group.position.x = x;
+        group.position.y = y - faint * sink;
+        group.position.z = z;
+        group.rotation.z = -faint * facing * 0.6;
+        mat.opacity = 1 - faint * 0.95;
+        mat.color.setHex(tint);
+    });
+
+    // Keep sprite proportions from the source image, within sane bounds
+    const width = scale * Math.min(1.6, Math.max(0.6, aspect));
+    const shadowY = -(scale / 2) + 0.12;
+
+    return (
+        <group ref={groupRef} position={position}>
+            {texture && (
+                <mesh scale={[width, scale, 1]}>
+                    <planeGeometry args={[1, 1]} />
+                    <meshBasicMaterial
+                        ref={matRef}
+                        map={texture}
+                        transparent
+                        alphaTest={0.05}
+                        side={THREE.DoubleSide}
+                        toneMapped={false}
+                    />
+                </mesh>
+            )}
+            {/* Soft glow behind the sprite (gold for shiny/elite mons), fading radially */}
+            <mesh position={[0, -0.05, side === 1 ? 0.15 : -0.15]}>
+                <planeGeometry args={[scale * 1.15, scale * 1.15]} />
+                <meshBasicMaterial
+                    map={getRadialTexture()}
+                    color={mon.shiny ? '#ffd700' : glowColor}
+                    transparent
+                    opacity={isFainted ? 0 : mon.shiny ? 0.4 : 0.25}
+                    blending={THREE.AdditiveBlending}
+                    depthWrite={false}
+                />
+            </mesh>
+            {/* Ground shadow, fading radially */}
+            <mesh position={[0, shadowY, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[1, 0.7, 1]}>
+                <planeGeometry args={[scale * 0.85, scale * 0.85]} />
+                <meshBasicMaterial
+                    map={getRadialTexture()}
+                    color="#000000"
+                    transparent
+                    opacity={isFainted ? 0 : 0.5}
+                    depthWrite={false}
+                />
+            </mesh>
+        </group>
+    );
+};
+
+interface ProjectileProps {
+    from: [number, number, number];
+    to: [number, number, number];
+    color: string;
+}
+
+/**
+ * A glowing bolt that travels from the attacker to the target during the
+ * lunge (0.28s, slight arc), timed so the ImpactEffect lands as it arrives.
+ */
+const ProjectileEffect: React.FC<ProjectileProps> = ({ from, to, color }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const start = useRef<number | null>(null);
+    const DURATION = 0.28;
+
+    useFrame(({ clock }) => {
+        const mesh = meshRef.current;
+        if (!mesh) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const progress = (t - start.current) / DURATION;
+        if (progress >= 1) {
+            mesh.visible = false;
+            return;
+        }
+        mesh.visible = true;
+        const eased = progress * progress; // ease-in
+        mesh.position.set(
+            from[0] + (to[0] - from[0]) * eased,
+            from[1] + (to[1] - from[1]) * eased + Math.sin(progress * Math.PI) * 0.6, // slight arc
+            from[2] + (to[2] - from[2]) * eased
+        );
+        const scale = 0.5 + progress * 0.4;
+        mesh.scale.set(scale, scale, scale);
+    });
+
+    return (
+        <mesh ref={meshRef} position={from} visible={false}>
+            <planeGeometry args={[1.1, 1.1]} />
+            <meshBasicMaterial
+                map={getRadialTexture()}
+                color={color}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+            />
+        </mesh>
+    );
+};
+
+interface ImpactProps {
+    anim: MoveAnimation;
+    targetPosition: [number, number, number];
+    size: number;
+    delay: number;
+}
+
+const ImpactEffect: React.FC<ImpactProps> = ({ anim, targetPosition, size, delay }) => {
+    const sheet = anim.spritesheet;
+    const texture = useLoader(THREE.TextureLoader, sheet.src);
+
+    const configured = useMemo(() => {
+        const tex = texture.clone();
+        tex.magFilter = THREE.NearestFilter;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(1 / sheet.columns, 1 / sheet.rows);
+        tex.needsUpdate = true;
+        return tex;
+    }, [texture, sheet.columns, sheet.rows]);
+
+    const meshRef = useRef<THREE.Mesh>(null);
+    const start = useRef<number | null>(null);
+    const totalDuration = (sheet.frameCount * sheet.frameDuration) / 1000;
+
+    useFrame(({ clock }) => {
+        const mesh = meshRef.current;
+        if (!mesh) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const elapsed = t - start.current - delay;
+        if (elapsed < 0) {
+            mesh.visible = false;
+            return;
+        }
+        const progress = elapsed / totalDuration;
+        if (progress >= 1) {
+            mesh.visible = false;
+            return;
+        }
+        mesh.visible = true;
+        const frame = Math.min(sheet.frameCount - 1, Math.floor(progress * sheet.frameCount));
+        const col = frame % sheet.columns;
+        const row = Math.floor(frame / sheet.columns);
+        configured.offset.set(col / sheet.columns, 1 - (row + 1) / sheet.rows);
+    });
+
+    return (
+        <mesh ref={meshRef} position={[targetPosition[0], targetPosition[1] + 0.1, targetPosition[2] + 0.4]} visible={false}>
+            <planeGeometry args={[size, size]} />
+            <meshBasicMaterial
+                map={configured}
+                color={anim.tint ?? '#ffffff'}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+            />
+        </mesh>
+    );
+};
+
+const WEATHER_PARTICLE_CONFIG = {
+    rain: { count: 500, color: '#7fb2ff', size: 0.05, fall: 9, drift: 0.6 },
+    hail: { count: 250, color: '#dff2ff', size: 0.09, fall: 5, drift: 1.2 },
+    sandstorm: { count: 450, color: '#d8b45a', size: 0.07, fall: 0.8, drift: 7 },
+} as const;
+
+const WeatherParticles: React.FC<{ weather: WeatherType }> = ({ weather }) => {
+    const config = weather in WEATHER_PARTICLE_CONFIG
+        ? WEATHER_PARTICLE_CONFIG[weather as keyof typeof WEATHER_PARTICLE_CONFIG]
+        : null;
+
+    const pointsRef = useRef<THREE.Points>(null);
+    const positions = useMemo(() => {
+        if (!config) return new Float32Array(0);
+        const arr = new Float32Array(config.count * 3);
+        for (let i = 0; i < config.count; i++) {
+            arr[i * 3] = (Math.random() - 0.5) * 16;
+            arr[i * 3 + 1] = Math.random() * 8;
+            arr[i * 3 + 2] = (Math.random() - 0.5) * 8;
+        }
+        return arr;
+    }, [config]);
+
+    useFrame((_, delta) => {
+        if (!config || !pointsRef.current) return;
+        const attr = pointsRef.current.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const arr = attr.array as Float32Array;
+        for (let i = 0; i < config.count; i++) {
+            arr[i * 3] += config.drift * delta * (weather === 'sandstorm' ? 1 : 0.3);
+            arr[i * 3 + 1] -= config.fall * delta;
+            if (arr[i * 3 + 1] < 0) {
+                arr[i * 3 + 1] = 8;
+                arr[i * 3] = (Math.random() - 0.5) * 16;
+            }
+            if (arr[i * 3] > 8) arr[i * 3] = -8;
+        }
+        attr.needsUpdate = true;
+    });
+
+    if (!config) return null;
+
+    return (
+        <points ref={pointsRef}>
+            <bufferGeometry>
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+            </bufferGeometry>
+            <pointsMaterial
+                color={config.color}
+                size={config.size}
+                transparent
+                opacity={0.75}
+                depthWrite={false}
+                sizeAttenuation
+            />
+        </points>
+    );
+};
+
+const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weather, terrain, fx, getTypeColor, backdrop = null }) => {
+    const fog = WEATHER_FOG[weather];
+    const targetIsPlayer = fx !== null && fx.attackerTeam === 2;
+    const targetPos = targetIsPlayer ? PLAYER_POS : ENEMY_POS;
+
+    return (
+        <>
+            <fog attach="fog" args={[fog.color, 4, weather === 'sandstorm' ? 14 : 30]} />
+            <color attach="background" args={[fog.color]} />
+            {backdrop ? (
+                // Scene image becomes sky + ground; SkyDome shows while it loads
+                <Suspense fallback={<SkyDome weather={weather} />}>
+                    <Backdrop url={backdrop} weather={weather} />
+                </Suspense>
+            ) : (
+                <SkyDome weather={weather} />
+            )}
+            <hemisphereLight args={['#93b4ff', '#1c2c4f', 0.55]} />
+            <ambientLight intensity={weather === 'sunny' ? 1.1 : 0.85} color={weather === 'sunny' ? '#ffe0a3' : '#cdd6ff'} />
+            <directionalLight position={[4, 6, 4]} intensity={weather === 'sunny' ? 1.6 : 1.05} color={weather === 'sunny' ? '#ffd27f' : '#ffffff'} />
+            <directionalLight position={[-5, 3, -4]} intensity={0.35} color="#8b7cf7" />
+
+            {/* Ground plane + arena floor (abstract mode only — the backdrop
+                image paints its own battlefield ground) */}
+            {!backdrop && (
+                <>
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
+                        <planeGeometry args={[90, 90]} />
+                        <meshStandardMaterial color="#0a0f1e" roughness={1} />
+                    </mesh>
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+                        <circleGeometry args={[9, 48]} />
+                        <meshStandardMaterial color={TERRAIN_COLORS[terrain]} roughness={1} />
+                    </mesh>
+                </>
+            )}
+            {/* Active terrain stays readable over the backdrop as a soft tint disc */}
+            {backdrop && terrain !== 'none' && (
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
+                    <circleGeometry args={[7, 48]} />
+                    <meshBasicMaterial
+                        map={getRadialTexture()}
+                        color={TERRAIN_COLORS[terrain]}
+                        transparent
+                        opacity={0.35}
+                        blending={THREE.AdditiveBlending}
+                        depthWrite={false}
+                    />
+                </mesh>
+            )}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+                <ringGeometry args={[3.1, 3.3, 48]} />
+                <meshBasicMaterial color="#ffffff" transparent opacity={backdrop ? 0.08 : 0.14} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+                <ringGeometry args={[3.3, 3.42, 48]} />
+                <meshBasicMaterial color="#4f8ef7" transparent opacity={backdrop ? 0.1 : 0.2} />
+            </mesh>
+
+            {leftMon && (
+                <PokemonSprite
+                    key={leftMon.key}
+                    mon={leftMon}
+                    position={PLAYER_POS}
+                    facing={1}
+                    side={1}
+                    scale={PLAYER_SCALE}
+                    fx={fx}
+                    glowColor={getTypeColor(leftMon.pokemon.types[0])}
+                />
+            )}
+            {rightMon && (
+                <PokemonSprite
+                    key={rightMon.key}
+                    mon={rightMon}
+                    position={ENEMY_POS}
+                    facing={-1}
+                    side={2}
+                    scale={ENEMY_SCALE}
+                    fx={fx}
+                    glowColor={getTypeColor(rightMon.pokemon.types[0])}
+                />
+            )}
+            {fx && fx.isDamaging && (
+                <ProjectileEffect
+                    key={`proj-${fx.id}`}
+                    from={targetIsPlayer ? ENEMY_POS : PLAYER_POS}
+                    to={targetPos}
+                    color={getTypeColor(fx.moveType)}
+                />
+            )}
+            <Suspense fallback={null}>
+                {fx && fx.isDamaging && (
+                    <ImpactEffect
+                        key={fx.id}
+                        anim={getMoveAnimation(fx.moveType)}
+                        targetPosition={targetPos}
+                        size={targetIsPlayer ? 3.6 : 3}
+                        delay={0.3}
+                    />
+                )}
+                {fx && fx.isDamaging && fx.isCritical && (
+                    <ImpactEffect
+                        key={`crit-${fx.id}`}
+                        anim={criticalOverlay}
+                        targetPosition={targetPos}
+                        size={targetIsPlayer ? 4.2 : 3.5}
+                        delay={0.42}
+                    />
+                )}
+            </Suspense>
+
+            <WeatherParticles weather={weather} />
+            <TerrainParticles terrain={terrain} />
+
+            {fx?.isCritical && (
+                <CameraShake
+                    key={fx.id}
+                    maxYaw={0.03}
+                    maxPitch={0.03}
+                    maxRoll={0.02}
+                    yawFrequency={9}
+                    pitchFrequency={9}
+                    rollFrequency={7}
+                    intensity={1}
+                    decay
+                    decayRate={1.8}
+                />
+            )}
+        </>
+    );
+};
+
+const BattleScene3D: React.FC<BattleScene3DProps> = (props) => (
+    <Canvas
+        camera={{ position: [0, 2.6, 8.2], fov: 40 }}
+        style={{ width: '100%', height: '100%' }}
+        gl={{ antialias: true, alpha: false }}
+        dpr={[1, 2]}
+    >
+        <SceneContents {...props} />
+    </Canvas>
+);
+
+export default BattleScene3D;

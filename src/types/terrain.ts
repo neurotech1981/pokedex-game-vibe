@@ -8,11 +8,6 @@ export interface TerrainEffect {
     statusEffectChance: number;
 }
 
-export function addUserAuthentication() {
-    // Add authentication logic
-    console.log('User authenticated');
-  }
-
 export const TERRAIN_EFFECTS: Record<TerrainType, TerrainEffect> = {
     none: {
         type: 'none',

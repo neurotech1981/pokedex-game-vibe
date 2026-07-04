@@ -2,25 +2,14 @@
 let audioContext: AudioContext | null = null;
 let gainNode: GainNode | null = null;
 let isInitialized = false;
-let activeSources: AudioBufferSourceNode[] = [];
-let soundBuffers: { [key: string]: AudioBuffer } = {};
 
 // Background music elements
 let bgmElement: HTMLAudioElement | null = null;
 let bgmVolume = 0.3; // Default background music volume
 
 // Define types for sound parameters
-type WaveformType = 'sine' | 'square' | 'triangle' | 'sawtooth';
 type SoundType = 'attack' | 'critical' | 'faint' | 'victory' | 'switch' | 'battleStart';
 type MusicType = 'battleTheme' | 'victoryTheme' | 'menuTheme';
-
-interface SoundParameters {
-  duration: number;
-  frequency: number;
-  attack: number;
-  decay: number;
-  type: WaveformType;
-}
 
 // Initialize the audio context and gain node
 const initAudio = () => {
@@ -35,16 +24,18 @@ const initAudio = () => {
 // Create and cache audio elements for each sound
 const soundElements: { [key in SoundType]?: HTMLAudioElement } = {};
 
+const base = import.meta.env.BASE_URL;
+
 // Define music tracks
 const musicTracks: { [key in MusicType]: string | string[] } = {
   battleTheme: [
-    '/audio/battle/battle-theme-1.mp3',  // Original battle theme
-    '/audio/battle/battle-theme-2.mp3',  // Medieval battle theme
-    '/audio/battle/battle-theme-3.mp3',  // JRPG Epic Rock Battle Theme
-    '/audio/battle/battle-theme-4.mp3'   // 8-bit battle theme
+    base + 'audio/battle/battle-theme-1.mp3',  // Original battle theme
+    base + 'audio/battle/battle-theme-2.mp3',  // Medieval battle theme
+    base + 'audio/battle/battle-theme-3.mp3',  // JRPG Epic Rock Battle Theme
+    base + 'audio/battle/battle-theme-4.mp3'   // 8-bit battle theme
   ],
-  victoryTheme: '/sounds/victory.mp3',    // Reusing sound as music for now
-  menuTheme: '/audio/battle/battle-theme-1.mp3'  // Reusing battle theme for now
+  victoryTheme: base + 'sounds/victory.mp3',    // Reusing sound as music for now
+  menuTheme: base + 'audio/battle/battle-theme-1.mp3'  // Reusing battle theme for now
 };
 
 // Preload all sounds
@@ -52,12 +43,12 @@ export const preloadSounds = async () => {
   initAudio();
 
   const soundFiles: { [key in SoundType]: string } = {
-    attack: '/sounds/attack.mp3',
-    critical: '/sounds/critical.mp3',
-    faint: '/sounds/faint.mp3',
-    victory: '/sounds/victory.mp3',
-    switch: '/sounds/switch.mp3',
-    battleStart: '/sounds/battle-start.mp3'
+    attack: base + 'sounds/attack.mp3',
+    critical: base + 'sounds/critical.mp3',
+    faint: base + 'sounds/faint.mp3',
+    victory: base + 'sounds/victory.mp3',
+    switch: base + 'sounds/switch.mp3',
+    battleStart: base + 'sounds/battle-start.mp3'
   };
 
   const loadPromises = Object.entries(soundFiles).map(([key, url]) => {
@@ -226,6 +217,51 @@ export const setVolume = (newVolume: number) => {
 
 export const getVolume = () => volume;
 
+// ---------------------------------------------------------------------------
+// Synthesized chimes (no audio assets needed): short oscillator arpeggios
+// for meta-game moments. Respects the SFX volume; silently no-ops when the
+// browser's autoplay policy keeps the AudioContext suspended.
+// ---------------------------------------------------------------------------
+
+export type ChimeType = 'levelUp' | 'recruit' | 'evolve';
+
+// Note frequencies (Hz), played sequentially with a soft envelope
+const CHIME_NOTES: Record<ChimeType, number[]> = {
+  levelUp: [523.25, 659.25, 783.99],                    // C5 E5 G5
+  recruit: [440, 587.33],                               // A4 D5
+  evolve: [523.25, 659.25, 783.99, 1046.5],             // C5 E5 G5 C6 fanfare
+};
+
+export const playChime = (type: ChimeType) => {
+  try {
+    initAudio();
+    if (!audioContext || !gainNode) return;
+    if (audioContext.state === 'suspended') {
+      // Best effort: resume needs a user gesture; bail quietly otherwise
+      void audioContext.resume().catch(() => undefined);
+      if (audioContext.state === 'suspended') return;
+    }
+    const now = audioContext.currentTime;
+    const stepDuration = type === 'evolve' ? 0.14 : 0.11;
+    CHIME_NOTES[type].forEach((freq, i) => {
+      const osc = audioContext!.createOscillator();
+      const envelope = audioContext!.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const start = now + i * stepDuration;
+      envelope.gain.setValueAtTime(0, start);
+      envelope.gain.linearRampToValueAtTime(volume * 0.35, start + 0.02);
+      envelope.gain.exponentialRampToValueAtTime(0.001, start + stepDuration * 2);
+      osc.connect(envelope);
+      envelope.connect(gainNode!);
+      osc.start(start);
+      osc.stop(start + stepDuration * 2.2);
+    });
+  } catch {
+    // Audio unavailable — chimes are cosmetic
+  }
+};
+
 // Clean up audio resources
 export const cleanup = () => {
   stopAllSounds();
@@ -235,5 +271,4 @@ export const cleanup = () => {
     gainNode = null;
     isInitialized = false;
   }
-  soundBuffers = {};
 };
