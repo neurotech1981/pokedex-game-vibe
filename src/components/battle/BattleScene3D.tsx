@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { CameraShake } from '@react-three/drei';
 import type { BattleMon, TeamId, WeatherType } from '../../utils/battleEngine';
+import type { DamageClass } from '../../data/moves';
 import type { TerrainType } from '../../types/terrain';
 import type { MoveAnimation } from '../../utils/moveAnimationHelper';
 import { criticalOverlay, getMoveAnimation } from '../../utils/moveAnimationHelper';
@@ -14,8 +15,11 @@ export interface SceneFx {
     id: number;
     attackerTeam: TeamId;
     moveType: string;
+    damageClass: DamageClass;
     isCritical: boolean;
     isDamaging: boolean;
+    /** Set when this fx sequence ended in a faint (drives the camera dolly). */
+    faintedTeam?: TeamId;
 }
 
 interface BattleScene3DProps {
@@ -85,6 +89,18 @@ const SkyDome: React.FC<{ weather: WeatherType }> = ({ weather }) => {
             <meshBasicMaterial map={texture} side={THREE.BackSide} fog={false} depthWrite={false} toneMapped={false} />
         </mesh>
     );
+};
+
+// Module-cached Pokéball texture (deliberately NOT useLoader: suspense would
+// unmount the sprite mid-entry)
+let pokeballTexture: THREE.Texture | null = null;
+const getPokeballTexture = (): THREE.Texture => {
+    if (!pokeballTexture) {
+        pokeballTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/items/poke-ball.png`);
+        pokeballTexture.magFilter = THREE.NearestFilter;
+        pokeballTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+    return pokeballTexture;
 };
 
 // Shared radial-gradient texture so glows and shadows fade out at the
@@ -183,20 +199,59 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
 
     const groupRef = useRef<THREE.Group>(null);
     const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const spriteRef = useRef<THREE.Mesh>(null);
+    const ballRef = useRef<THREE.Mesh>(null);
+    const flashRef = useRef<THREE.Mesh>(null);
+    const flashMatRef = useRef<THREE.MeshBasicMaterial>(null);
     const fxStart = useRef<number>(0);
     const lastFxId = useRef<number>(-1);
     const faintProgress = useRef<number>(0);
+    const entryStart = useRef<number | null>(null);
     const phase = useMemo(() => Math.random() * Math.PI * 2, []);
 
     const isFainted = mon.currentHp <= 0;
     const isAttacker = fx !== null && fx.attackerTeam === mon.team;
     const isDefender = fx !== null && fx.attackerTeam !== mon.team && fx.isDamaging;
 
+    // Keep sprite proportions from the source image, within sane bounds
+    const width = scale * Math.min(1.6, Math.max(0.6, aspect));
+
     useFrame(({ clock }) => {
         const group = groupRef.current;
         const mat = matRef.current;
         if (!group || !mat) return;
         const t = clock.getElapsedTime();
+
+        // Pokéball send-out: ball arcs in, flash, sprite materializes
+        if (entryStart.current === null) entryStart.current = t;
+        const entry = t - entryStart.current;
+        const entering = entry < 0.9;
+
+        const ball = ballRef.current;
+        if (ball) {
+            if (entry < 0.35) {
+                const p = entry / 0.35;
+                ball.visible = true;
+                ball.position.set(-facing * (1.8 - p * 1.8), 0.4 + Math.sin(p * Math.PI) * 0.9 - 0.4 * p, 0.3);
+                ball.rotation.z = -facing * p * Math.PI * 2;
+            } else {
+                ball.visible = false;
+            }
+        }
+        const flash = flashRef.current;
+        const flashMat = flashMatRef.current;
+        if (flash && flashMat) {
+            if (entry >= 0.3 && entry < 0.65) {
+                const p = (entry - 0.3) / 0.35;
+                flash.visible = true;
+                flash.scale.setScalar(0.5 + p * 2.4);
+                flashMat.opacity = 0.9 * (1 - p);
+            } else {
+                flash.visible = false;
+            }
+        }
+        const spriteScale = entering ? Math.max(0, Math.min(1, (entry - 0.35) / 0.35)) : 1;
+        spriteRef.current?.scale.set(width * spriteScale, scale * spriteScale, 1);
 
         if (fx && fx.id !== lastFxId.current) {
             lastFxId.current = fx.id;
@@ -218,16 +273,17 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
         const y = position[1] + Math.sin(t * 2 + phase) * 0.07;
         let tint = 0xffffff;
 
-        // Attack lunge toward the opponent (diagonal, since the sides now sit at different depths)
-        if (isAttacker && fxElapsed < 0.45) {
+        // Attack lunge toward the opponent (harder for physical moves)
+        if (isAttacker && fxElapsed < 0.45 && !entering) {
             const p = fxElapsed / 0.45;
-            const lunge = Math.sin(p * Math.PI);
-            x += lunge * 1.1 * facing;
-            z += lunge * 0.8 * -facing;
+            const amplitude = fx?.damageClass === 'physical' ? 1.5 : 1.1;
+            const lunge = Math.sin(p * Math.PI) * amplitude;
+            x += lunge * facing;
+            z += lunge * 0.72 * -facing;
         }
 
         // Hit reaction: shake + red flash
-        if (isDefender && fxElapsed > 0.25 && fxElapsed < 0.8) {
+        if (isDefender && fxElapsed > 0.25 && fxElapsed < 0.8 && !entering) {
             x += Math.sin(fxElapsed * 60) * 0.09;
             tint = 0xff5555;
         }
@@ -240,14 +296,12 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
         mat.color.setHex(tint);
     });
 
-    // Keep sprite proportions from the source image, within sane bounds
-    const width = scale * Math.min(1.6, Math.max(0.6, aspect));
     const shadowY = -(scale / 2) + 0.12;
 
     return (
         <group ref={groupRef} position={position}>
             {texture && (
-                <mesh scale={[width, scale, 1]}>
+                <mesh ref={spriteRef} scale={[width, scale, 1]}>
                     <planeGeometry args={[1, 1]} />
                     <meshBasicMaterial
                         ref={matRef}
@@ -259,6 +313,23 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
                     />
                 </mesh>
             )}
+            {/* Pokéball toss on entry */}
+            <mesh ref={ballRef} visible={false}>
+                <planeGeometry args={[0.55, 0.55]} />
+                <meshBasicMaterial map={getPokeballTexture()} transparent alphaTest={0.1} toneMapped={false} />
+            </mesh>
+            {/* Materialize flash */}
+            <mesh ref={flashRef} visible={false} position={[0, 0, 0.2]}>
+                <planeGeometry args={[1, 1]} />
+                <meshBasicMaterial
+                    ref={flashMatRef}
+                    map={getRadialTexture()}
+                    color="#ffffff"
+                    transparent
+                    blending={THREE.AdditiveBlending}
+                    depthWrite={false}
+                />
+            </mesh>
             {/* Soft glow behind the sprite (gold for shiny/elite mons), fading radially */}
             <mesh position={[0, -0.05, side === 1 ? 0.15 : -0.15]}>
                 <planeGeometry args={[scale * 1.15, scale * 1.15]} />
@@ -286,46 +357,47 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
     );
 };
 
-interface ProjectileProps {
-    from: [number, number, number];
-    to: [number, number, number];
-    color: string;
-}
+// ---------------------------------------------------------------------------
+// Move-class FX: special = beam, physical = slash crescent, status = sparkles
+// ---------------------------------------------------------------------------
 
-/**
- * A glowing bolt that travels from the attacker to the target during the
- * lunge (0.28s, slight arc), timed so the ImpactEffect lands as it arrives.
- */
-const ProjectileEffect: React.FC<ProjectileProps> = ({ from, to, color }) => {
+const BeamEffect: React.FC<{ from: [number, number, number]; to: [number, number, number]; color: string }> = ({ from, to, color }) => {
     const meshRef = useRef<THREE.Mesh>(null);
+    const matRef = useRef<THREE.MeshBasicMaterial>(null);
     const start = useRef<number | null>(null);
-    const DURATION = 0.28;
+
+    const placement = useMemo(() => {
+        const a = new THREE.Vector3(from[0], from[1], from[2]);
+        const b = new THREE.Vector3(to[0], to[1] + 0.1, to[2]);
+        const dir = b.clone().sub(a);
+        const length = dir.length();
+        const mid = a.clone().add(b).multiplyScalar(0.5);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.normalize());
+        return { mid, quaternion, length };
+    }, [from, to]);
 
     useFrame(({ clock }) => {
         const mesh = meshRef.current;
-        if (!mesh) return;
+        const mat = matRef.current;
+        if (!mesh || !mat) return;
         const t = clock.getElapsedTime();
         if (start.current === null) start.current = t;
-        const progress = (t - start.current) / DURATION;
-        if (progress >= 1) {
+        const elapsed = t - start.current;
+        if (elapsed >= 0.38) {
             mesh.visible = false;
             return;
         }
         mesh.visible = true;
-        const eased = progress * progress; // ease-in
-        mesh.position.set(
-            from[0] + (to[0] - from[0]) * eased,
-            from[1] + (to[1] - from[1]) * eased + Math.sin(progress * Math.PI) * 0.6, // slight arc
-            from[2] + (to[2] - from[2]) * eased
-        );
-        const scale = 0.5 + progress * 0.4;
-        mesh.scale.set(scale, scale, scale);
+        const thickness = elapsed < 0.12 ? (elapsed / 0.12) * 0.5 : 0.5;
+        mesh.scale.set(1, thickness, 1);
+        mat.opacity = elapsed < 0.12 ? 0.95 : 0.95 * (1 - (elapsed - 0.12) / 0.26);
     });
 
     return (
-        <mesh ref={meshRef} position={from} visible={false}>
-            <planeGeometry args={[1.1, 1.1]} />
+        <mesh ref={meshRef} position={placement.mid} quaternion={placement.quaternion} visible={false}>
+            <planeGeometry args={[placement.length, 1]} />
             <meshBasicMaterial
+                ref={matRef}
                 map={getRadialTexture()}
                 color={color}
                 transparent
@@ -335,6 +407,123 @@ const ProjectileEffect: React.FC<ProjectileProps> = ({ from, to, color }) => {
             />
         </mesh>
     );
+};
+
+const SlashEffect: React.FC<{ at: [number, number, number]; color: string }> = ({ at, color }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const start = useRef<number | null>(null);
+
+    useFrame(({ clock }) => {
+        const mesh = meshRef.current;
+        const mat = matRef.current;
+        if (!mesh || !mat) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const elapsed = t - start.current - 0.28; // land with the lunge
+        if (elapsed < 0 || elapsed >= 0.28) {
+            mesh.visible = elapsed < 0 ? false : mesh.visible && false;
+            return;
+        }
+        mesh.visible = true;
+        const p = elapsed / 0.28;
+        mesh.rotation.z = 0.7 - p * 2.1; // swipe
+        const s = 0.8 + p * 0.6;
+        mesh.scale.set(s, s, 1);
+        mat.opacity = 0.95 * (1 - p);
+    });
+
+    return (
+        <mesh ref={meshRef} position={[at[0], at[1] + 0.2, at[2] + 0.5]} visible={false}>
+            <ringGeometry args={[0.7, 1.05, 32, 1, 0, 1.7]} />
+            <meshBasicMaterial
+                ref={matRef}
+                color={color}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+                side={THREE.DoubleSide}
+            />
+        </mesh>
+    );
+};
+
+const SparkleEffect: React.FC<{ at: [number, number, number]; color: string }> = ({ at, color }) => {
+    const pointsRef = useRef<THREE.Points>(null);
+    const matRef = useRef<THREE.PointsMaterial>(null);
+    const start = useRef<number | null>(null);
+    const COUNT = 20;
+
+    const positions = useMemo(() => {
+        const arr = new Float32Array(COUNT * 3);
+        for (let i = 0; i < COUNT; i++) {
+            arr[i * 3] = (Math.random() - 0.5) * 1.6;
+            arr[i * 3 + 1] = Math.random() * 1.4 - 0.4;
+            arr[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
+        }
+        return arr;
+    }, []);
+
+    useFrame(({ clock }, delta) => {
+        const points = pointsRef.current;
+        const mat = matRef.current;
+        if (!points || !mat) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const elapsed = t - start.current;
+        if (elapsed >= 0.7) {
+            points.visible = false;
+            return;
+        }
+        points.visible = true;
+        points.position.y = at[1] + elapsed * 1.3;
+        mat.opacity = 0.95 * (1 - elapsed / 0.7);
+        void delta;
+    });
+
+    return (
+        <points ref={pointsRef} position={[at[0], at[1], at[2] + 0.4]} visible={false}>
+            <bufferGeometry>
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+            </bufferGeometry>
+            <pointsMaterial
+                ref={matRef}
+                color={color}
+                size={0.12}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                sizeAttenuation
+            />
+        </points>
+    );
+};
+
+/** Brief fov dolly-in when a Pokémon faints. FOV only — never touch position/rotation. */
+const CameraRig: React.FC<{ fx: SceneFx | null }> = ({ fx }) => {
+    const lastId = useRef(-1);
+    const dollyStart = useRef<number | null>(null);
+
+    useFrame(({ camera, clock }) => {
+        const cam = camera as THREE.PerspectiveCamera;
+        const t = clock.getElapsedTime();
+        if (fx?.faintedTeam !== undefined && fx.id !== lastId.current) {
+            lastId.current = fx.id;
+            dollyStart.current = t;
+        }
+        if (dollyStart.current === null) return;
+        const elapsed = t - dollyStart.current;
+        let fov = 40;
+        if (elapsed < 0.35) fov = 40 - 7 * (elapsed / 0.35);
+        else if (elapsed < 0.75) fov = 33;
+        else if (elapsed < 1.2) fov = 33 + 7 * ((elapsed - 0.75) / 0.45);
+        else dollyStart.current = null;
+        cam.fov = fov;
+        cam.updateProjectionMatrix();
+    });
+
+    return null;
 };
 
 interface ImpactProps {
@@ -541,14 +730,25 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                     glowColor={getTypeColor(rightMon.pokemon.types[0])}
                 />
             )}
-            {fx && fx.isDamaging && (
-                <ProjectileEffect
-                    key={`proj-${fx.id}`}
+            {fx && fx.isDamaging && fx.damageClass === 'special' && (
+                <BeamEffect
+                    key={`beam-${fx.id}`}
                     from={targetIsPlayer ? ENEMY_POS : PLAYER_POS}
                     to={targetPos}
                     color={getTypeColor(fx.moveType)}
                 />
             )}
+            {fx && fx.isDamaging && fx.damageClass !== 'special' && (
+                <SlashEffect key={`slash-${fx.id}`} at={targetPos} color={getTypeColor(fx.moveType)} />
+            )}
+            {fx && !fx.isDamaging && fx.damageClass === 'status' && (
+                <SparkleEffect
+                    key={`spark-${fx.id}`}
+                    at={fx.attackerTeam === 1 ? PLAYER_POS : ENEMY_POS}
+                    color={getTypeColor(fx.moveType)}
+                />
+            )}
+            <CameraRig fx={fx} />
             <Suspense fallback={null}>
                 {fx && fx.isDamaging && (
                     <ImpactEffect

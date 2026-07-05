@@ -1,5 +1,5 @@
 import type { Pokemon } from '../types/pokemon';
-import type { DamageClass, Move, StatusType } from '../data/moves';
+import type { BoostableStat, DamageClass, Move, StatusType } from '../data/moves';
 import { getMovesForTypes } from '../data/moves';
 
 /**
@@ -15,11 +15,18 @@ export interface ApiMoveDetail {
     name: string;
     power: number | null;
     accuracy: number | null;
+    priority?: number;
     type: { name: string };
     damage_class: { name: string };
+    target?: { name: string } | null;
+    stat_changes?: Array<{ change: number; stat: { name: string } }> | null;
     meta?: {
         ailment?: { name: string } | null;
         ailment_chance?: number;
+        min_hits?: number | null;
+        max_hits?: number | null;
+        flinch_chance?: number;
+        stat_chance?: number;
     } | null;
 }
 
@@ -32,6 +39,16 @@ export interface ApiPokemonMoveEntry {
 }
 
 const STATUS_AILMENTS = new Set<StatusType>(['paralysis', 'sleep', 'poison', 'burn', 'freeze', 'confusion']);
+
+// PokeAPI stat names → engine BoostableStat (special stats fold into their
+// physical counterparts; accuracy/evasion unmodeled)
+const STAT_NAME_MAP: Record<string, BoostableStat> = {
+    attack: 'attack',
+    defense: 'defense',
+    speed: 'speed',
+    'special-attack': 'attack',
+    'special-defense': 'defense',
+};
 const MAX_CANDIDATES = 8;
 const MOVESET_SIZE = 4;
 
@@ -62,11 +79,40 @@ export const mapApiMove = (detail: ApiMoveDetail): Move => {
             chance: chance > 0 ? chance / 100 : damageClass === 'status' ? 1 : 0.1,
         };
     }
+
+    if (detail.priority && detail.priority !== 0) {
+        move.priority = detail.priority;
+    }
+    if (detail.meta?.min_hits && detail.meta?.max_hits) {
+        move.multiHit = { min: detail.meta.min_hits, max: detail.meta.max_hits };
+    }
+    if (detail.meta?.flinch_chance && detail.meta.flinch_chance > 0) {
+        move.flinchChance = detail.meta.flinch_chance / 100;
+    }
+
+    // Stat changes: self-buffs map to the existing boost specialEffect,
+    // opponent debuffs get their own field. Accuracy/evasion are skipped —
+    // the engine's stat stages are attack/defense/speed only.
+    const statChange = detail.stat_changes?.find(c => STAT_NAME_MAP[c.stat.name] !== undefined);
+    if (statChange) {
+        const stat = STAT_NAME_MAP[statChange.stat.name];
+        const statChance = detail.meta?.stat_chance ?? 0;
+        const chance = statChance > 0 ? statChance / 100 : damageClass === 'status' ? 1 : 0.1;
+        const targetsUser = detail.target?.name === 'user' || detail.target?.name === 'user-and-allies';
+        if (targetsUser && statChange.change > 0 && !move.specialEffect) {
+            move.specialEffect = { type: 'boost', value: statChange.change, chance, stat };
+        } else if (!targetsUser && statChange.change < 0) {
+            move.debuff = { stat, stages: -statChange.change, chance };
+        }
+    }
     return move;
 };
 
 /** Pick the level-up learnset, strongest (latest-learned) first. */
-export const selectLevelUpCandidates = (entries: ApiPokemonMoveEntry[]): { name: string; url: string }[] =>
+export const selectLevelUpCandidates = (
+    entries: ApiPokemonMoveEntry[],
+    limit: number = MAX_CANDIDATES
+): { move: { name: string; url: string }; level: number }[] =>
     entries
         .map(entry => {
             const levels = entry.version_group_details
@@ -76,8 +122,7 @@ export const selectLevelUpCandidates = (entries: ApiPokemonMoveEntry[]): { name:
         })
         .filter((e): e is { move: { name: string; url: string }; level: number } => e !== null)
         .sort((a, b) => b.level - a.level)
-        .slice(0, MAX_CANDIDATES)
-        .map(e => e.move);
+        .slice(0, limit);
 
 /** Compose the final ≤4 moveset: mostly damaging moves, one status slot if available. */
 export const pickMoveset = (moves: Move[]): Move[] => {
@@ -94,7 +139,8 @@ export const pickMoveset = (moves: Move[]): Move[] => {
 // Fetch layer with caches (per-move, per-Pokémon, plus a localStorage mirror)
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'pokedexGame.movesets.v1';
+// v2: v1 mirrors predate priority/multiHit/flinch/debuff fields
+const STORAGE_KEY = 'pokedexGame.movesets.v2';
 
 const readMirror = (): Record<number, Move[]> => {
     try {
@@ -143,7 +189,7 @@ const fetchMoveset = async (pokemon: Pokemon): Promise<Move[]> => {
     const candidates = selectLevelUpCandidates(data.moves as ApiPokemonMoveEntry[]);
     if (candidates.length === 0) throw new Error('no level-up moves');
 
-    const settled = await Promise.allSettled(candidates.map(c => fetchMoveDetail(c.url)));
+    const settled = await Promise.allSettled(candidates.map(c => fetchMoveDetail(c.move.url)));
     const moves = settled
         .filter(r => r.status === 'fulfilled')
         .map(r => mapApiMove(r.value));
@@ -152,6 +198,74 @@ const fetchMoveset = async (pokemon: Pokemon): Promise<Move[]> => {
 
     writeMirror(pokemon.id, moveset);
     return moveset;
+};
+
+// ---------------------------------------------------------------------------
+// Full learnset (for the Move Manager) — unlike movesets, failures REJECT so
+// the UI can show a retry; battles never depend on this path.
+// ---------------------------------------------------------------------------
+
+export interface LearnsetEntry {
+    move: Move;
+    level: number;
+}
+
+const LEARNSET_STORAGE_KEY = 'pokedexGame.learnsets.v1';
+const LEARNSET_LIMIT = 20;
+
+const readLearnsetMirror = (): Record<number, LearnsetEntry[]> => {
+    try {
+        return JSON.parse(localStorage.getItem(LEARNSET_STORAGE_KEY) ?? '{}');
+    } catch {
+        return {};
+    }
+};
+
+const writeLearnsetMirror = (id: number, entries: LearnsetEntry[]): void => {
+    try {
+        const mirror = readLearnsetMirror();
+        mirror[id] = entries;
+        localStorage.setItem(LEARNSET_STORAGE_KEY, JSON.stringify(mirror));
+    } catch {
+        // storage full — cache misses are fine
+    }
+};
+
+const learnsetCache = new Map<number, Promise<LearnsetEntry[]>>();
+
+const fetchLearnset = async (pokemon: Pokemon): Promise<LearnsetEntry[]> => {
+    const mirrored = readLearnsetMirror()[pokemon.id];
+    if (mirrored && mirrored.length > 0) return mirrored;
+
+    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemon.id}`);
+    if (!res.ok) throw new Error(`pokemon ${pokemon.id}: HTTP ${res.status}`);
+    const data = await res.json();
+    const candidates = selectLevelUpCandidates(data.moves as ApiPokemonMoveEntry[], LEARNSET_LIMIT);
+    if (candidates.length === 0) throw new Error('no level-up moves');
+
+    const settled = await Promise.allSettled(
+        candidates.map(async c => ({ move: mapApiMove(await fetchMoveDetail(c.move.url)), level: c.level }))
+    );
+    const entries = settled
+        .filter((r): r is PromiseFulfilledResult<LearnsetEntry> => r.status === 'fulfilled')
+        .map(r => r.value);
+    if (entries.length === 0) throw new Error('no usable learnset moves');
+
+    writeLearnsetMirror(pokemon.id, entries);
+    return entries;
+};
+
+/** Full level-up learnset (≤20, level desc). Rejects on failure — callers retry. */
+export const getFullLearnset = (pokemon: Pokemon): Promise<LearnsetEntry[]> => {
+    let cached = learnsetCache.get(pokemon.id);
+    if (!cached) {
+        cached = fetchLearnset(pokemon).catch(err => {
+            learnsetCache.delete(pokemon.id); // allow retry
+            throw err;
+        });
+        learnsetCache.set(pokemon.id, cached);
+    }
+    return cached;
 };
 
 /**

@@ -537,6 +537,123 @@ describe('held items', () => {
     });
 });
 
+describe('combat depth: multi-hit, flinch, debuffs, priority momentum', () => {
+    const FURY: Move = {
+        name: 'Test Fury', type: 'normal', power: 20, accuracy: 1, energyCost: 15,
+        multiHit: { min: 2, max: 5 },
+    };
+    const HEADBUTT: Move = {
+        name: 'Test Headbutt', type: 'normal', power: 70, accuracy: 1, energyCost: 20,
+        flinchChance: 0.3,
+    };
+    const GROWL: Move = {
+        name: 'Test Growl', type: 'normal', power: 0, accuracy: 1, energyCost: 10,
+        debuff: { stat: 'attack', stages: 1, chance: 1 },
+    };
+    const QUICK: Move = {
+        name: 'Test Quick', type: 'normal', power: 40, accuracy: 1, energyCost: 10,
+        priority: 1,
+    };
+
+    it('multi-hit strikes the rolled number of times and reports it', () => {
+        const state = makeState([makePokemon(1, 'a', ['normal'])], [makePokemon(2, 'b', ['normal'], { hp: 200 })]);
+        // accuracy, hit1 crit+dmg, hit-count roll 0.99 → 2+floor(.99*4)=5 hits,
+        // then 4 × (crit+dmg) rolls
+        const rng = rngFrom([0.5, 0.5, 0.5, 0.99, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+        const { events } = resolveAction(state, { kind: 'move', move: FURY }, undefined, rng);
+        expect(events.filter(e => e.kind === 'damage')).toHaveLength(5);
+        expect(events.find(e => e.kind === 'multiHit')).toMatchObject({ hits: 5 });
+    });
+
+    it('Focus Sash only saves against the first hit of a multi-hit move', () => {
+        const team1 = [createBattleMon(makePokemon(1, 'nuker', ['normal'], { attack: 250 }), 1, 0, 50, null)];
+        const team2 = [
+            createBattleMon(makePokemon(2, 'frail', ['fire'], { hp: 25, defense: 30 }), 2, 0, 50, null, { heldItem: 'focusSash' }),
+            createBattleMon(makePokemon(3, 'backup', ['fire']), 2, 1, 50, null),
+        ];
+        const state = createEngineState(team1, team2);
+        const { events } = resolveAction(state, { kind: 'move', move: FURY }, undefined, () => 0.5);
+        // sash procs on hit 1 (lethal from full), hit 2 finishes the job
+        expect(events.some(e => e.kind === 'heldItem' && e.itemName === 'Focus Sash')).toBe(true);
+        expect(events.some(e => e.kind === 'faint')).toBe(true);
+    });
+
+    it('flinch blocks a defender that has not acted yet, then expires', () => {
+        const state = makeState(
+            [makePokemon(1, 'fast', ['normal'], { speed: 150, hp: 200 })],
+            [makePokemon(2, 'slow', ['normal'], { speed: 30, hp: 200 })]
+        );
+        // Team 1 (leads) headbutts: accuracy, crit, dmg, flinch roll 0.1 < 0.3
+        const { state: afterHit } = resolveAction(state, { kind: 'move', move: HEADBUTT }, undefined, rngFrom([0.5, 0.5, 0.5, 0.1]));
+        expect(getActiveMon(afterHit, 2).flinched).toBe(true);
+        // Team 2 tries to act → blocked by flinch, flag consumed
+        const { state: afterBlock, events } = resolveAction(afterHit, { kind: 'move', move: HEADBUTT }, undefined, () => 0.5);
+        expect(events.some(e => e.kind === 'blocked' && e.reason === 'flinch')).toBe(true);
+        expect(getActiveMon(afterBlock, 2).flinched).toBe(false);
+    });
+
+    it('flinch cannot be applied to a defender that already acted this round', () => {
+        const state = makeState(
+            [makePokemon(1, 'slow', ['normal'], { speed: 30, hp: 200 })],
+            [makePokemon(2, 'fast', ['normal'], { speed: 150, hp: 200 })]
+        );
+        state.currentTurn = 1;
+        state.acted = { 1: false, 2: true }; // team 2 already moved this round
+        const { state: next } = resolveAction(state, { kind: 'move', move: HEADBUTT }, undefined, rngFrom([0.5, 0.5, 0.5, 0.1]));
+        expect(getActiveMon(next, 2).flinched).toBe(false);
+    });
+
+    it('pure status debuffs lower the target stat', () => {
+        const state = makeState([makePokemon(1, 'a', ['normal'])], [makePokemon(2, 'b', ['normal'])]);
+        const { state: next, events } = resolveAction(state, { kind: 'move', move: GROWL }, undefined, () => 0.5);
+        expect(events.find(e => e.kind === 'statStage')).toMatchObject({ stat: 'attack', delta: -1, stage: -1 });
+        expect(getActiveMon(next, 2).stages.attack).toBe(-1);
+    });
+
+    it('priority momentum: the slower mon leads the next round after a priority move', () => {
+        const state = makeState(
+            [makePokemon(1, 'slow', ['normal'], { speed: 30, hp: 300 })],
+            [makePokemon(2, 'fast', ['normal'], { speed: 150, hp: 300 })]
+        );
+        // Fast team 2 leads round 1 and passes; slow team 1 closes with a priority move
+        state.currentTurn = 2;
+        const { state: afterFast } = resolveAction(state, { kind: 'pass' }, undefined, () => 0.5);
+        expect(afterFast.currentTurn).toBe(1);
+        const { state: afterRound } = resolveAction(afterFast, { kind: 'move', move: QUICK }, undefined, () => 0.5);
+        // Momentum outranks speed: team 1 leads round 2
+        expect(afterRound.roundFirst).toBe(1);
+
+        // Momentum resets after a non-priority action
+        afterRound.currentTurn = 1;
+        const { state: afterPlain } = resolveAction(afterRound, { kind: 'pass' }, undefined, () => 0.5);
+        const { state: finalRound } = resolveAction(
+            { ...afterPlain, currentTurn: 2 },
+            { kind: 'pass' },
+            undefined,
+            () => 0.5
+        );
+        expect(finalRound.roundFirst).toBe(2); // speed decides again
+    });
+
+    it('priority momentum outranks Quick Claw', () => {
+        const state = makeState(
+            [makePokemon(1, 'a', ['normal'], { speed: 100 })],
+            [makePokemon(2, 'b', ['normal'], { speed: 100 })]
+        );
+        getActiveMon(state, 1).priorityMomentum = 1;
+        getActiveMon(state, 2).heldItem = 'quickClaw';
+        // rng would proc the claw (0.05 < 0.2) but momentum wins without rolling
+        const { state: begun } = beginBattle(state, rngFrom([0.05]));
+        expect(begun.roundFirst).toBe(1);
+    });
+
+    it("the 'move' event carries the damage class", () => {
+        const state = makeState([makePokemon(1, 'a', ['fire'])], [makePokemon(2, 'b', ['normal'])]);
+        const { events } = resolveAction(state, { kind: 'move', move: FLAMETHROWER }, undefined, () => 0.5);
+        expect(events.find(e => e.kind === 'move')).toMatchObject({ damageClass: 'special' });
+    });
+});
+
 describe('confusion self-hit', () => {
     it('a confused Pokémon can hurt itself', () => {
         const state = makeState([makePokemon(1, 'dizzy', ['fire'])], [makePokemon(2, 'b', ['normal'])]);

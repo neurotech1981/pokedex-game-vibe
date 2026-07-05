@@ -32,6 +32,20 @@ const getMoveDescription = (move: Move): string => {
     if (move.comboMove) {
         description += ` ${Math.round(move.comboMove.chance * 100)}% chance to follow up with ${move.comboMove.name}.`;
     }
+    if (move.multiHit) {
+        description += move.multiHit.min === move.multiHit.max
+            ? ` Hits ${move.multiHit.min} times.`
+            : ` Hits ${move.multiHit.min}–${move.multiHit.max} times.`;
+    }
+    if (move.flinchChance) {
+        description += ` ${Math.round(move.flinchChance * 100)}% chance to make the target flinch.`;
+    }
+    if (move.debuff) {
+        description += ` ${Math.round(move.debuff.chance * 100)}% chance to lower the target's ${move.debuff.stat} by ${move.debuff.stages}.`;
+    }
+    if ((move.priority ?? 0) > 0) {
+        description += ' Priority: strikes fast — you act first next round.';
+    }
     return description;
 };
 

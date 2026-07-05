@@ -34,9 +34,11 @@ import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
 import { TYPE_EFFECTIVENESS } from '../data/typeChart';
 import type { HeldItemId } from '../data/items';
 import { HELD_ITEMS, HELD_ITEM_IDS } from '../data/items';
+import type { Move } from '../data/moves';
 import type { Pokemon, Team } from '../types/pokemon';
 import type { PlayerProfile } from '../utils/progression';
 import { availableHeldItems, getMonProgress, registerMonProgress } from '../utils/progression';
+import MoveManagerDialog from './MoveManagerDialog';
 
 interface Props {
     pokemons: Pokemon[];
@@ -75,6 +77,7 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
     const [rightTab, setRightTab] = useState(0);
     const [boxMenu, setBoxMenu] = useState<{ anchor: HTMLElement; boxIndex: number } | null>(null);
     const [releaseIndex, setReleaseIndex] = useState<number | null>(null);
+    const [movesFor, setMovesFor] = useState<Pokemon | null>(null);
 
     // Filter available Pokémon
     const filteredPokemons = React.useMemo(() => {
@@ -251,6 +254,19 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
     const handleReleaseFromBox = (boxIndex: number) => {
         updateProfile(prev => ({ ...prev, box: prev.box.filter((_, i) => i !== boxIndex) }));
         setReleaseIndex(null);
+    };
+
+    const handleSaveCustomMoves = (pokemonId: number, moves: Move[] | null) => {
+        updateProfile(prev => {
+            const existing = prev.mons[pokemonId] ?? { xp: 0, level: 50 };
+            return {
+                ...prev,
+                mons: {
+                    ...prev.mons,
+                    [pokemonId]: { ...existing, customMoves: moves ?? undefined },
+                },
+            };
+        });
     };
 
     // Equip/unequip a held item on a species ('' clears it)
@@ -508,6 +524,15 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                                     />
                                                                 ))}
                                                             </Box>
+                                                            <Button
+                                                                fullWidth
+                                                                size="small"
+                                                                variant="text"
+                                                                onClick={() => setMovesFor(pokemon)}
+                                                                sx={{ mt: 0.5, py: 0, fontSize: '0.65rem', minHeight: 0 }}
+                                                            >
+                                                                Moves{progress.customMoves?.length ? ' ★' : ''}
+                                                            </Button>
                                                             {(ownedHeldItems.length > 0 || progress.heldItem) && (
                                                                 <TextField
                                                                     select
@@ -875,6 +900,18 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                     );
                 })}
             </Menu>
+
+            {/* Moveset manager */}
+            {movesFor && (
+                <MoveManagerDialog
+                    open
+                    pokemon={movesFor}
+                    currentCustom={getMonProgress(profile, movesFor.id).customMoves}
+                    onSave={moves => handleSaveCustomMoves(movesFor.id, moves)}
+                    onClose={() => setMovesFor(null)}
+                    getTypeColor={getTypeColor}
+                />
+            )}
 
             {/* Release confirmation */}
             <Dialog open={releaseIndex !== null} onClose={() => setReleaseIndex(null)}>

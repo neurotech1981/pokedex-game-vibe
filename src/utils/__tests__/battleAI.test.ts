@@ -112,6 +112,78 @@ describe('selectAIAction', () => {
     });
 });
 
+describe('combat-depth AI', () => {
+    it('values debuffs on a fresh target but not one at -6', () => {
+        const GROWL = {
+            name: 'Test Growl', type: 'normal', power: 0, accuracy: 1, energyCost: 10,
+            debuff: { stat: 'attack' as const, stages: 1, chance: 1 },
+        };
+        const WEAK_HIT = { name: 'Test Poke', type: 'normal', power: 20, accuracy: 1, energyCost: 10 };
+        const state = makeState(
+            [makePokemon(1, 'tank', ['normal'], { defense: 250, specialDefense: 250 })],
+            [makePokemon(2, 'debuffer', ['normal'], { attack: 10, specialAttack: 10 })]
+        );
+        state.currentTurn = 2;
+        getActiveMon(state, 2).moves = [GROWL, WEAK_HIT];
+        const fresh = selectAIAction(state, undefined, 'expert', 'balanced', NO_RANDOM);
+        expect(fresh.kind === 'move' && fresh.move.name).toBe('Test Growl');
+
+        getActiveMon(state, 1).stages.attack = -6;
+        const floored = selectAIAction(state, undefined, 'expert', 'balanced', NO_RANDOM);
+        expect(floored.kind === 'move' && floored.move.name).toBe('Test Poke');
+    });
+
+    it('multi-hit expected damage counts all hits (prefers 3×30 over 1×70)', () => {
+        const TRIPLE = {
+            name: 'Test Triple', type: 'normal', power: 30, accuracy: 1, energyCost: 20,
+            multiHit: { min: 3, max: 3 },
+        };
+        const SINGLE = { name: 'Test Single', type: 'normal', power: 70, accuracy: 1, energyCost: 20 };
+        const state = makeState(
+            [makePokemon(1, 'wall', ['normal'], { hp: 250 })],
+            [makePokemon(2, 'flurry', ['normal'])]
+        );
+        state.currentTurn = 2;
+        getActiveMon(state, 2).moves = [SINGLE, TRIPLE];
+        const action = selectAIAction(state, undefined, 'expert', 'balanced', NO_RANDOM);
+        expect(action.kind === 'move' && action.move.name).toBe('Test Triple');
+    });
+
+    it('slower low-HP mons reach for priority moves', () => {
+        const QUICK = { name: 'Test Quick', type: 'normal', power: 40, accuracy: 1, energyCost: 10, priority: 1 };
+        const SLAM = { name: 'Test Slam', type: 'normal', power: 55, accuracy: 1, energyCost: 20 };
+        const state = makeState(
+            [makePokemon(1, 'speedster', ['normal'], { speed: 150, hp: 250 })],
+            [makePokemon(2, 'wounded', ['normal'], { speed: 30 })]
+        );
+        state.currentTurn = 2;
+        state.items[2] = { potion: 0, fullHeal: 0, xAttack: 0 }; // no healing escape hatch
+        const ai = getActiveMon(state, 2);
+        ai.moves = [SLAM, QUICK];
+        ai.currentHp = Math.floor(ai.maxHp * 0.2);
+        const action = selectAIAction(state, undefined, 'expert', 'balanced', NO_RANDOM);
+        expect(action.kind === 'move' && action.move.name).toBe('Test Quick');
+    });
+
+    it('expert AI retreats from a guaranteed KO it cannot answer', () => {
+        // Player's fire nuke one-shots the AI grass mon; AI has a healthy
+        // water bench mon that resists fire → predictive switch
+        const state = makeState(
+            [makePokemon(1, 'scorcher', ['fire'], { specialAttack: 250 })],
+            [
+                makePokemon(2, 'leafy', ['grass'], { hp: 30, specialDefense: 30, attack: 20, specialAttack: 20 }),
+                makePokemon(3, 'soaker', ['water']),
+            ]
+        );
+        state.currentTurn = 2;
+        const action = selectAIAction(state, undefined, 'expert', 'balanced', NO_RANDOM);
+        expect(action.kind).toBe('switch');
+        if (action.kind === 'switch') {
+            expect(action.targetKey).toBe(state.order[2][1]);
+        }
+    });
+});
+
 describe('selectAIForcedSwitch', () => {
     it('picks the bench mon with the best matchup', () => {
         const state = makeState(

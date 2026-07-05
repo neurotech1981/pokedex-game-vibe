@@ -7,6 +7,7 @@ import {
     calculateDamage,
     canAffordMove,
     canUseItem,
+    effectiveSpeed,
     getActiveMon,
     getSwitchableMons,
 } from './battleEngine';
@@ -30,7 +31,8 @@ const expectedDamage = (
         chart,
         rng: DETERMINISTIC_RNG,
     });
-    return result.damage * move.accuracy;
+    const avgHits = move.multiHit ? (move.multiHit.min + move.multiHit.max) / 2 : 1;
+    return result.damage * avgHits * move.accuracy;
 };
 
 const evaluateMove = (
@@ -86,6 +88,34 @@ const evaluateMove = (
 
     if (move.comboMove) {
         score += move.comboMove.chance * 15;
+    }
+
+    // Debuffs are worth it until the target is already well lowered
+    if (move.debuff) {
+        const targetStage = defender.stages[move.debuff.stat];
+        if (targetStage > -2) {
+            score += move.debuff.chance * move.debuff.stages * 25 *
+                (personality === 'defensive' ? 1.3 : 1);
+        } else if (targetStage <= -6) {
+            score -= 25; // wasted
+        }
+    }
+
+    // Flinch only matters when we act before the target this round
+    if (move.flinchChance && !state.acted[defender.team]) {
+        score += move.flinchChance * move.accuracy * 40;
+    }
+
+    // Priority secures next round's first strike — precious when slower,
+    // vital when about to be KO'd
+    if ((move.priority ?? 0) > 0 && effectiveSpeed(attacker) < effectiveSpeed(defender)) {
+        const urgency = attacker.currentHp / attacker.maxHp < 0.35 ? 2 : 1;
+        score += 15 * (move.priority ?? 0) * urgency;
+    }
+
+    // Defensive Leftovers holders like to stall with heals
+    if (personality === 'defensive' && attacker.heldItem === 'leftovers' && move.specialEffect?.type === 'heal') {
+        score += 10;
     }
 
     // Prefer cheap moves when energy is running low
@@ -176,6 +206,33 @@ export const selectAIAction = (
                 .sort((a, b) => b.score - a.score)[0];
             if (best.score > current + 15) {
                 return { kind: 'switch', targetKey: best.mon.key };
+            }
+        }
+    }
+
+    // Expert AI anticipates: if the defender's best move would KO us this
+    // round and we can't KO them first, retreat to a mon that resists it
+    if (difficulty === 'expert') {
+        const incoming = Math.max(
+            0,
+            ...defender.moves.map(m => expectedDamage(defender, attacker, m, state, chart))
+        );
+        const bestDamage = expectedDamage(attacker, defender, scored[0].move, state, chart);
+        const weWouldKoFirst = bestDamage >= defender.currentHp && scored[0].move.accuracy >= 0.9;
+        if (incoming >= attacker.currentHp && !weWouldKoFirst) {
+            const bench = getSwitchableMons(state, team);
+            const current = matchupScore(attacker, defender, chart);
+            const safe = bench
+                .filter(mon =>
+                    // none of the defender's damaging move types hit this mon super-effectively
+                    defender.moves.every(m =>
+                        m.power <= 0 || calculateTypeEffectiveness(m.type, mon.pokemon.types, chart) <= 1
+                    )
+                )
+                .map(mon => ({ mon, score: matchupScore(mon, defender, chart) }))
+                .sort((a, b) => b.score - a.score)[0];
+            if (safe && safe.score > current + 10) {
+                return { kind: 'switch', targetKey: safe.mon.key };
             }
         }
     }

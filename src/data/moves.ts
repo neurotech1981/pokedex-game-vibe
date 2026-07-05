@@ -12,6 +12,14 @@ export interface Move {
     energyCost: number;
     /** Physical/special/status split; omitted → derived from type (Gen 1-3 rules). */
     damageClass?: DamageClass;
+    /** Positive priority = momentum: the user leads the NEXT round. */
+    priority?: number;
+    /** Strikes several times per use (e.g. Fury Attack 2-5). */
+    multiHit?: { min: number; max: number };
+    /** Chance to flinch a defender that hasn't acted yet this round. */
+    flinchChance?: number;
+    /** Chance to lower one of the target's stats. */
+    debuff?: { stat: BoostableStat; stages: number; chance: number };
     statusEffect?: {
         type: StatusType;
         chance: number;
@@ -93,7 +101,7 @@ export const MOVES: { [key: string]: Move[] } = {
         { name: 'Calm Mind', type: 'psychic', power: 0, accuracy: 1, energyCost: 20, specialEffect: { type: 'boost', value: 1, chance: 1, stat: 'attack' } },
     ],
     ghost: [
-        { name: 'Shadow Sneak', type: 'ghost', power: 40, accuracy: 1, energyCost: 15 },
+        { name: 'Shadow Sneak', type: 'ghost', power: 40, accuracy: 1, energyCost: 15, priority: 1 },
         { name: 'Night Shade', type: 'ghost', power: 100, accuracy: 1, energyCost: 30 },
         { name: 'Shadow Ball', type: 'ghost', power: 80, accuracy: 1, energyCost: 25, specialEffect: { type: 'boost', value: 1, chance: 0.3, stat: 'attack' } },
         { name: 'Curse', type: 'ghost', power: 0, accuracy: 1, energyCost: 20, specialEffect: { type: 'terrain', value: 0.5, chance: 1 } },
@@ -101,7 +109,7 @@ export const MOVES: { [key: string]: Move[] } = {
     fighting: [
         { name: 'Close Combat', type: 'fighting', power: 120, accuracy: 1, energyCost: 35 },
         { name: 'Brick Break', type: 'fighting', power: 75, accuracy: 1, energyCost: 20 },
-        { name: 'Mach Punch', type: 'fighting', power: 40, accuracy: 1, energyCost: 10 },
+        { name: 'Mach Punch', type: 'fighting', power: 40, accuracy: 1, energyCost: 10, priority: 1 },
         { name: 'Bulk Up', type: 'fighting', power: 0, accuracy: 1, energyCost: 20, specialEffect: { type: 'boost', value: 1, chance: 1, stat: 'attack' } },
     ],
     ground: [

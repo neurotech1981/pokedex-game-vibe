@@ -2,7 +2,7 @@ import type { Pokemon } from '../types/pokemon';
 import type { Ability } from '../types/abilities';
 import type { TerrainType } from '../types/terrain';
 import { TERRAIN_EFFECTS } from '../types/terrain';
-import type { BoostableStat, Move, StatusType } from '../data/moves';
+import type { BoostableStat, DamageClass, Move, StatusType } from '../data/moves';
 import { getDamageClass, getMovesForTypes } from '../data/moves';
 import type { HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { HELD_ITEMS, ITEMS, createInventory } from '../data/items';
@@ -42,6 +42,10 @@ export interface BattleMon {
     heldItem?: HeldItemId;
     /** One-shot held item effects (Focus Sash) mark themselves used here. */
     heldItemUsed: boolean;
+    /** Priority of the last move used — winner leads the next round. */
+    priorityMomentum: number;
+    /** Set by flinching hits; consumed (blocking the action) on the next act. */
+    flinched: boolean;
 }
 
 export interface EngineState {
@@ -65,10 +69,11 @@ export interface EngineState {
 }
 
 export type BattleEvent =
-    | { kind: 'move'; monKey: string; moveName: string; moveType: string }
+    | { kind: 'move'; monKey: string; moveName: string; moveType: string; damageClass: DamageClass }
     | { kind: 'damage'; monKey: string; amount: number; isCritical: boolean; effectiveness: number }
+    | { kind: 'multiHit'; monKey: string; hits: number }
     | { kind: 'miss'; monKey: string; moveName: string }
-    | { kind: 'blocked'; monKey: string; reason: 'paralysis' | 'sleep' | 'freeze' | 'confusion' }
+    | { kind: 'blocked'; monKey: string; reason: 'paralysis' | 'sleep' | 'freeze' | 'confusion' | 'flinch' }
     | { kind: 'statusApplied'; monKey: string; status: StatusType }
     | { kind: 'statusDamage'; monKey: string; status: StatusType; amount: number }
     | { kind: 'statusCured'; monKey: string; status: StatusType }
@@ -180,6 +185,8 @@ export const createBattleMon = (
         moves: opts.moves && opts.moves.length > 0 ? opts.moves : getMovesForTypes(pokemon.types),
         heldItem: opts.heldItem,
         heldItemUsed: false,
+        priorityMomentum: 0,
+        flinched: false,
     };
 };
 
@@ -320,11 +327,13 @@ export const calculateDamage = (
 
 export interface ActCheckResult {
     canAct: boolean;
-    reason?: 'paralysis' | 'sleep' | 'freeze' | 'confusion';
+    reason?: 'paralysis' | 'sleep' | 'freeze' | 'confusion' | 'flinch';
     cured?: boolean;
 }
 
 export const checkCanAct = (mon: BattleMon, rng: Rng = Math.random): ActCheckResult => {
+    // Flinch blocks unconditionally (consumed by the caller)
+    if (mon.flinched) return { canAct: false, reason: 'flinch' };
     if (!mon.status) return { canAct: true };
     switch (mon.status.type) {
         case 'paralysis':
@@ -426,6 +435,12 @@ const dispatchOnEnter = (state: EngineState, mon: BattleMon, events: BattleEvent
 const determineRoundFirst = (state: EngineState, rng: Rng, events?: BattleEvent[]): TeamId => {
     const mon1 = getActiveMon(state, 1);
     const mon2 = getActiveMon(state, 2);
+
+    // Priority momentum outranks everything: a mon that just used a
+    // priority move leads the next round (momentum model — see Move.priority)
+    if (mon1.priorityMomentum !== mon2.priorityMomentum) {
+        return mon1.priorityMomentum > mon2.priorityMomentum ? 1 : 2;
+    }
 
     // Quick Claw: chance to lead the round regardless of speed. If exactly
     // one side procs, that side goes first.
@@ -555,6 +570,10 @@ const applyEndOfTurn = (state: EngineState, actor: BattleMon, events: BattleEven
     }
     state.turnCount += 1;
 
+    // Unconsumed flinches expire with the round (e.g. the target switched out)
+    getActiveMon(state, 1).flinched = false;
+    getActiveMon(state, 2).flinched = false;
+
     // The faster active Pokémon leads the next round
     state.acted = { 1: false, 2: false };
     state.roundFirst = determineRoundFirst(state, rng, events);
@@ -612,6 +631,7 @@ export const resolveAction = (
     }
 
     if (action.kind === 'pass') {
+        actor.priorityMomentum = 0;
         events.push({ kind: 'pass', team });
         applyEndOfTurn(state, actor, events, rng);
         return { state, events };
@@ -622,6 +642,8 @@ export const resolveAction = (
         if (!target || target.team !== team || target.currentHp <= 0 || target.key === actor.key) {
             return { state: prevState, events };
         }
+        actor.priorityMomentum = 0;
+        actor.flinched = false; // don't carry a flinch to the bench
         state.active[team] = target.key;
         events.push({ kind: 'switch', team, monKey: target.key, forced: false });
         dispatchOnEnter(state, target, events);
@@ -657,6 +679,7 @@ export const resolveAction = (
                 break;
             }
         }
+        actor.priorityMomentum = 0;
         state.items[team][action.itemId] -= 1;
         applyEndOfTurn(state, actor, events, rng);
         return { state, events };
@@ -670,13 +693,15 @@ export const resolveAction = (
         return { state: prevState, events };
     }
 
-    // Status pre-check (paralysis / sleep / freeze / confusion)
+    // Status pre-check (flinch / paralysis / sleep / freeze / confusion)
     const actCheck = checkCanAct(actor, rng);
+    actor.flinched = false; // consumed either way
     if (actCheck.cured && actor.status) {
         events.push({ kind: 'statusCured', monKey: actor.key, status: actor.status.type });
         actor.status = null;
     }
     if (!actCheck.canAct) {
+        actor.priorityMomentum = 0;
         events.push({ kind: 'blocked', monKey: actor.key, reason: actCheck.reason! });
         // Confused Pokémon hurt themselves: a typeless 40-power hit against their own stats
         if (actCheck.reason === 'confusion') {
@@ -696,7 +721,10 @@ export const resolveAction = (
     }
 
     actor.energy = Math.max(0, actor.energy - move.energyCost);
-    events.push({ kind: 'move', monKey: actor.key, moveName: move.name, moveType: move.type });
+    // Momentum: a priority move means this mon leads the next round (a miss
+    // still counts — the mon moved fast regardless)
+    actor.priorityMomentum = move.priority ?? 0;
+    events.push({ kind: 'move', monKey: actor.key, moveName: move.name, moveType: move.type, damageClass: getDamageClass(move) });
 
     // Accuracy roll
     if (rng() >= move.accuracy) {
@@ -739,6 +767,42 @@ export const resolveAction = (
             events.push({ kind: 'heldItem', monKey: defender.key, itemName: HELD_ITEMS[defender.heldItem].name });
         }
 
+        // Multi-hit follow-ups: each extra hit rolls fresh damage/crit;
+        // survive-once effects (Sturdy/Sash) naturally apply per hit
+        if (move.multiHit && damage > 0) {
+            const totalHits = move.multiHit.min +
+                Math.floor(rng() * (move.multiHit.max - move.multiHit.min + 1));
+            let landed = 1;
+            for (let hit = 1; hit < totalHits && defender.currentHp > 0; hit++) {
+                const hitResult = calculateDamage(actor, defender, move, {
+                    weather: state.weather,
+                    terrain: state.terrain,
+                    chart,
+                    rng,
+                });
+                const hitDamage = hitResult.effectiveness === 0 ? 0 : Math.round(hitResult.damage * abilityBoost);
+                if (hitDamage <= 0) break;
+                const hitSurvived = applyDamage(defender, hitDamage);
+                dealtDamage += hitDamage;
+                landed += 1;
+                events.push({
+                    kind: 'damage',
+                    monKey: defender.key,
+                    amount: hitDamage,
+                    isCritical: hitResult.isCritical,
+                    effectiveness: hitResult.effectiveness,
+                });
+                if (hitSurvived === 'ability' && defender.ability) {
+                    events.push({ kind: 'abilityActivated', monKey: defender.key, abilityName: defender.ability.name });
+                } else if (hitSurvived === 'item' && defender.heldItem) {
+                    events.push({ kind: 'heldItem', monKey: defender.key, itemName: HELD_ITEMS[defender.heldItem].name });
+                }
+            }
+            if (landed > 1) {
+                events.push({ kind: 'multiHit', monKey: actor.key, hits: landed });
+            }
+        }
+
         // Combo follow-up
         if (defender.currentHp > 0 && move.comboMove && rng() < move.comboMove.chance) {
             const comboResult = calculateDamage(actor, defender, {
@@ -779,6 +843,27 @@ export const resolveAction = (
             actor.status = { type: retaliateStatus, turns: statusDuration(retaliateStatus, rng) };
             events.push({ kind: 'statusApplied', monKey: actor.key, status: retaliateStatus });
         }
+
+        // Flinch: only meaningful if the defender still has to act this round
+        if (
+            move.flinchChance &&
+            dealtDamage > 0 &&
+            defender.currentHp > 0 &&
+            !state.acted[defender.team] &&
+            rng() < move.flinchChance
+        ) {
+            defender.flinched = true;
+        }
+
+        // Stat-lowering side effects (Rock Tomb, Crunch, ...)
+        if (move.debuff && defender.currentHp > 0 && rng() < move.debuff.chance) {
+            applyStatStage(defender, move.debuff.stat, -move.debuff.stages, events);
+        }
+    }
+
+    // Pure status debuffs (Growl, Tail Whip, ...) — no damage required
+    if (move.power <= 0 && move.debuff && defender.currentHp > 0 && rng() < move.debuff.chance) {
+        applyStatStage(defender, move.debuff.stat, -move.debuff.stages, events);
     }
 
     // Status effect application (only if the target is still standing and unstatused)

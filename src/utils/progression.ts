@@ -1,4 +1,5 @@
 import type { Pokemon } from '../types/pokemon';
+import type { Move } from '../data/moves';
 import type { HeldInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { createInventory } from '../data/items';
 
@@ -20,6 +21,8 @@ export interface MonProgress {
     declinedEvolveAt?: number;
     /** Held item equipped in the Team Builder. */
     heldItem?: HeldItemId;
+    /** Player-picked moveset (≤4) from the Move Manager; unset → auto. */
+    customMoves?: Move[];
 }
 
 export interface PlayerRecords {
@@ -39,6 +42,12 @@ export interface BoxPokemon {
     elite?: boolean;
 }
 
+export interface LeagueProgress {
+    /** League stage ids beaten, in any storage order (gating is positional). */
+    defeated: string[];
+    champion: boolean;
+}
+
 export interface PlayerProfile {
     version: 1;
     /** Per-species progress, keyed by national dex id. */
@@ -48,6 +57,7 @@ export interface PlayerProfile {
     heldItems: HeldInventory;
     records: PlayerRecords;
     box: BoxPokemon[];
+    league: LeagueProgress;
 }
 
 export const createProfile = (): PlayerProfile => ({
@@ -57,6 +67,7 @@ export const createProfile = (): PlayerProfile => ({
     heldItems: {},
     records: { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, totalBattles: 0, gauntletBestStage: 0 },
     box: [],
+    league: { defeated: [], champion: false },
 });
 
 export const getMonProgress = (profile: PlayerProfile, pokemonId: number): MonProgress =>

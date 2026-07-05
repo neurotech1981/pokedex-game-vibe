@@ -11,7 +11,13 @@ export const loadProfile = (): PlayerProfile => {
         const parsed = JSON.parse(raw) as PlayerProfile;
         if (parsed?.version !== 1) return createProfile();
         // Backfill any fields added since the profile was first saved
-        return { ...createProfile(), ...parsed, records: { ...createProfile().records, ...parsed.records } };
+        const defaults = createProfile();
+        return {
+            ...defaults,
+            ...parsed,
+            records: { ...defaults.records, ...parsed.records },
+            league: { ...defaults.league, ...parsed.league },
+        };
     } catch {
         return createProfile();
     }

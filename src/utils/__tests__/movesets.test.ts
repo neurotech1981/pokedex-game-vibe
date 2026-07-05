@@ -57,6 +57,63 @@ describe('mapApiMove', () => {
         expect(prettifyMoveName('fire-blast')).toBe('Fire Blast');
         expect(prettifyMoveName('double-edge')).toBe('Double Edge');
     });
+
+    it('maps priority (only when non-zero)', () => {
+        expect(mapApiMove(detail({ name: 'quick-attack', priority: 1 })).priority).toBe(1);
+        expect(mapApiMove(detail({ priority: 0 })).priority).toBeUndefined();
+    });
+
+    it('maps multi-hit ranges', () => {
+        const move = mapApiMove(detail({
+            name: 'fury-attack',
+            meta: { ailment: { name: 'none' }, min_hits: 2, max_hits: 5 },
+        }));
+        expect(move.multiHit).toEqual({ min: 2, max: 5 });
+    });
+
+    it('maps flinch chance', () => {
+        const move = mapApiMove(detail({
+            name: 'headbutt',
+            meta: { ailment: { name: 'none' }, flinch_chance: 30 },
+        }));
+        expect(move.flinchChance).toBe(0.3);
+    });
+
+    it('maps opponent stat drops to debuff (special-defense folds to defense)', () => {
+        const move = mapApiMove(detail({
+            name: 'acid-spray',
+            damage_class: { name: 'special' },
+            target: { name: 'selected-pokemon' },
+            stat_changes: [{ change: -2, stat: { name: 'special-defense' } }],
+            meta: { ailment: { name: 'none' }, stat_chance: 100 },
+        }));
+        expect(move.debuff).toEqual({ stat: 'defense', stages: 2, chance: 1 });
+    });
+
+    it('maps self stat raises to the boost specialEffect', () => {
+        const move = mapApiMove(detail({
+            name: 'swords-dance',
+            power: null,
+            damage_class: { name: 'status' },
+            target: { name: 'user' },
+            stat_changes: [{ change: 2, stat: { name: 'attack' } }],
+            meta: { ailment: { name: 'none' }, stat_chance: 0 },
+        }));
+        expect(move.specialEffect).toEqual({ type: 'boost', value: 2, chance: 1, stat: 'attack' });
+        expect(move.debuff).toBeUndefined();
+    });
+
+    it('skips accuracy/evasion stat changes', () => {
+        const move = mapApiMove(detail({
+            name: 'sand-attack',
+            power: null,
+            damage_class: { name: 'status' },
+            target: { name: 'selected-pokemon' },
+            stat_changes: [{ change: -1, stat: { name: 'accuracy' } }],
+        }));
+        expect(move.debuff).toBeUndefined();
+        expect(move.specialEffect).toBeUndefined();
+    });
 });
 
 describe('selectLevelUpCandidates', () => {
@@ -78,9 +135,14 @@ describe('selectLevelUpCandidates', () => {
         ];
         const picked = selectLevelUpCandidates(entries);
         expect(picked).toHaveLength(8);
-        expect(picked[0].name).toBe('thunder');
-        expect(picked[1].name).toBe('thunderbolt');
-        expect(picked.some(c => c.name === 'hyper-beam')).toBe(false);
+        expect(picked[0]).toMatchObject({ move: { name: 'thunder' }, level: 58 });
+        expect(picked[1]).toMatchObject({ move: { name: 'thunderbolt' }, level: 36 });
+        expect(picked.some(c => c.move.name === 'hyper-beam')).toBe(false);
+    });
+
+    it('honors a custom limit (learnset uses 20)', () => {
+        const entries = Array.from({ length: 30 }, (_, i) => entry(`m-${i}`, [{ method: 'level-up', level: i }]));
+        expect(selectLevelUpCandidates(entries, 20)).toHaveLength(20);
     });
 });
 

@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import Avatar from '@mui/material/Avatar';
 import CloseIcon from '@mui/icons-material/Close';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
@@ -84,8 +85,21 @@ import {
 } from '../utils/gauntlet';
 import type { RecruitOffer } from '../utils/recruitment';
 import { recruitStatMod, rollRecruit } from '../utils/recruitment';
-import { getMovesetForPokemon } from '../utils/movesets';
+import { getFullLearnset, getMovesetForPokemon } from '../utils/movesets';
 import { backgroundUrl, pickBattleBackgroundId } from '../data/battleBackgrounds';
+import type { LeagueStage } from '../data/league';
+import {
+    LEAGUE_XP_MULTIPLIER,
+    fetchLeagueTeam,
+    getLeagueStage,
+    leagueStageLevel,
+    nextLeagueStage,
+    trainerPortraitUrl,
+} from '../data/league';
+import LeagueCard from './battle/LeagueCard';
+import type { VsIntroPayload } from './battle/VsIntro';
+import VsIntro from './battle/VsIntro';
+import { getBattleSprites } from '../utils/spriteSources';
 import { fetchPokemonById, getEvolutionTarget } from '../utils/evolution';
 import RecruitOfferCard from './battle/RecruitOfferCard';
 import type { PendingEvolution } from './battle/EvolutionPrompt';
@@ -388,6 +402,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const [gauntletStage, setGauntletStage] = useState<number | null>(null);
     const gauntletHpRef = useRef<Record<number, number>>({});
 
+    // League challenge state
+    const [leagueStageId, setLeagueStageId] = useState<string | null>(null);
+    const [leagueError, setLeagueError] = useState<string | null>(null);
+    const leagueStage = leagueStageId ? getLeagueStage(leagueStageId) ?? null : null;
+
     // Guards async battle start (moveset fetches) against double-clicks
     const [starting, setStarting] = useState(false);
 
@@ -411,6 +430,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
 
     // Battle scene backdrop, chosen once per battle
     const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+
+    // VS intro: engine events are deferred until the splash dismisses
+    const [intro, setIntro] = useState<VsIntroPayload | null>(null);
+    const pendingBeginRef = useRef<EngineState | null>(null);
 
     const battleStatsRef = useRef<Record<string, MonBattleStats>>({});
 
@@ -476,6 +499,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         id: nextId(),
                         attackerTeam: teamOf(ev.monKey),
                         moveType: ev.moveType,
+                        damageClass: ev.damageClass,
                         isCritical: false,
                         isDamaging: false,
                     };
@@ -519,10 +543,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         sleep: 'is fast asleep...',
                         freeze: 'is frozen solid!',
                         confusion: 'is confused and stumbled!',
+                        flinch: 'flinched and couldn’t move!',
                     }[ev.reason];
                     addLog(`${nameOf(ev.monKey)} ${reasonText}`);
                     break;
                 }
+                case 'multiHit':
+                    addLog(`Hit ${ev.hits} times!`, 'critical');
+                    break;
                 case 'statusApplied':
                     addLog(`${nameOf(ev.monKey)} was afflicted with ${ev.status}!`);
                     addFloatingText(STATUS_LABELS[ev.status], STATUS_COLORS[ev.status], teamOf(ev.monKey), 'status');
@@ -571,6 +599,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     if (attackerKey && teamOf(attackerKey) !== teamOf(ev.monKey)) {
                         statFor(attackerKey).kos += 1;
                     }
+                    if (sceneFx) sceneFx.faintedTeam = teamOf(ev.monKey);
                     addLog(`${nameOf(ev.monKey)} fainted!`, 'death');
                     playSound('faint');
                     break;
@@ -619,25 +648,25 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         setTimeout(() => setBusy(false), paced(1200));
     }, [busy, engine, hotseat, paced, processEvents, typeEffectiveness]);
 
-    // AI turn (never fires in hotseat)
+    // AI turn (never fires in hotseat or under the VS intro)
     useEffect(() => {
-        if (hotseat || !engine || engine.phase !== 'selecting' || engine.currentTurn !== 2) return;
+        if (intro !== null || hotseat || !engine || engine.phase !== 'selecting' || engine.currentTurn !== 2) return;
         const timer = setTimeout(() => {
             const action = selectAIAction(engine, typeEffectiveness, aiDifficulty, aiPersonality);
             processEvents(resolveAction(engine, action, typeEffectiveness));
         }, paced(1500));
         return () => clearTimeout(timer);
-    }, [engine, hotseat, aiDifficulty, aiPersonality, paced, processEvents, typeEffectiveness]);
+    }, [engine, hotseat, intro, aiDifficulty, aiPersonality, paced, processEvents, typeEffectiveness]);
 
-    // AI forced switch (never fires in hotseat)
+    // AI forced switch (never fires in hotseat or under the VS intro)
     useEffect(() => {
-        if (hotseat || !engine || engine.phase !== 'awaitingSwitch' || engine.pendingSwitch !== 2) return;
+        if (intro !== null || hotseat || !engine || engine.phase !== 'awaitingSwitch' || engine.pendingSwitch !== 2) return;
         const timer = setTimeout(() => {
             const key = selectAIForcedSwitch(engine, 2, typeEffectiveness);
             if (key) processEvents(resolveForcedSwitch(engine, key));
         }, paced(1000));
         return () => clearTimeout(timer);
-    }, [engine, hotseat, paced, processEvents, typeEffectiveness]);
+    }, [engine, hotseat, intro, paced, processEvents, typeEffectiveness]);
 
     // Battle results: XP, records, item drops — applied exactly once per battle
     useEffect(() => {
@@ -656,13 +685,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         });
 
         const inGauntlet = gauntletStage !== null;
+        const inLeague = leagueStage !== null;
         let records = updateRecords(profile.records, won);
         if (inGauntlet && won) {
             records = { ...records, gauntletBestStage: Math.max(records.gauntletBestStage, gauntletStage) };
         }
-        const xpMultiplier = inGauntlet ? GAUNTLET_XP_MULTIPLIER : 1;
+        const xpMultiplier = inLeague ? LEAGUE_XP_MULTIPLIER : inGauntlet ? GAUNTLET_XP_MULTIPLIER : 1;
         const { profile: withXp, gains } = applyBattleXp(profile, entries, won, records.currentStreak, xpMultiplier);
-        const isBoss = inGauntlet && isBossStage(gauntletStage);
+        const isBoss = inLeague || (inGauntlet && isBossStage(gauntletStage));
         const drops = won ? rollBattleRewards(records.currentStreak, isBoss, Math.random) : [];
         const heldDrop = won ? rollHeldItemDrop(records.currentStreak, isBoss, Math.random) : null;
         const heldDrops = heldDrop ? [heldDrop] : [];
@@ -671,15 +701,25 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         const items = addItems({ ...engine.items[1] }, drops);
         const heldItems = addHeldItems(profile.heldItems, heldDrops);
 
-        updateProfile(() => ({ ...withXp, records, items, heldItems }));
+        // League progress: badges/defeats persist forever (idempotent append)
+        const league = inLeague && won && !withXp.league.defeated.includes(leagueStage.id)
+            ? {
+                defeated: [...withXp.league.defeated, leagueStage.id],
+                champion: withXp.league.champion || leagueStage.kind === 'champion',
+            }
+            : withXp.league;
+        if (inLeague && won && leagueStage.badge) playChime('recruit'); // badge fanfare
+
+        updateProfile(() => ({ ...withXp, records, items, heldItems, league }));
         setBattleResult({ gains, drops, heldDrops, streak: records.currentStreak });
 
-        // Recruitment offer (guaranteed after gauntlet bosses)
+        // Recruitment offer (guaranteed after gauntlet bosses and E4/champion wins)
         if (won) {
             const teamMons = engine.order[1].map(key => engine.mons[key]);
             const avgLevel = Math.round(teamMons.reduce((a, m) => a + m.level, 0) / teamMons.length);
+            const guaranteed = (inGauntlet && isBoss) || (inLeague && leagueStage.kind !== 'gym');
             setRecruitOffer(
-                rollRecruit(pokemons, avgLevel, records.currentStreak, Math.random, { guaranteed: isBoss })
+                rollRecruit(pokemons, avgLevel, records.currentStreak, Math.random, { guaranteed })
             );
         }
 
@@ -705,7 +745,21 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     }]
             );
         });
-    }, [engine, gauntletStage, hotseat, pokemons, profile, updateProfile]);
+
+        // New-move hints (log-line only; fire-and-forget)
+        leveled.forEach(gain => {
+            const mon = engine.order[1].map(key => engine.mons[key]).find(m => m.pokemon.id === gain.pokemonId);
+            if (!mon) return;
+            getFullLearnset(mon.pokemon)
+                .then(entries => {
+                    const learnable = entries.find(e => e.level > gain.fromLevel && e.level <= gain.toLevel);
+                    if (learnable) {
+                        addLog(`${capitalize(mon.pokemon.name)} can learn ${learnable.move.name} — manage moves in the Team Builder!`);
+                    }
+                })
+                .catch(() => undefined); // hint is best-effort
+        });
+    }, [addLog, engine, gauntletStage, leagueStage, hotseat, pokemons, profile, updateProfile]);
 
     const registerRecruit = useCallback((offer: RecruitOffer) => {
         updateProfile(prev => registerMonProgress(prev, {
@@ -775,7 +829,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         return Math.round(levels.reduce((a, b) => a + b, 0) / levels.length);
     };
 
-    const launchBattle = (state: EngineState, openingLog: string) => {
+    const launchBattle = (state: EngineState, openingLog: string, introPayload: VsIntroPayload) => {
         battleStatsRef.current = {};
         resultsAppliedRef.current = false;
         setBattleResult(null);
@@ -784,14 +838,25 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         setLogs([]);
         setFloatingTexts([]);
         setFx(null);
-        setBusy(false);
+        setBusy(true); // locked until the VS intro dismisses
         playSound('battleStart');
         if (musicOn) playMusic('battleTheme');
         addLog(openingLog);
         addLog(`${capitalize(getActiveMon(state, 1).pokemon.name)} and ${capitalize(getActiveMon(state, 2).pokemon.name)} enter the arena!`);
-        // Speed decides who leads; entry abilities (Intimidate) fire on both sides
-        processEvents(beginBattle(state));
+        // Defer beginBattle (speed order, Intimidate, Quick Claw) until after
+        // the intro so its events land on a visible arena
+        setEngine(state);
+        pendingBeginRef.current = state;
+        setIntro(introPayload);
     };
+
+    const handleIntroDone = useCallback(() => {
+        setIntro(null);
+        const pending = pendingBeginRef.current;
+        pendingBeginRef.current = null;
+        if (pending) processEvents(beginBattle(pending));
+        setTimeout(() => setBusy(false), paced(400));
+    }, [paced, processEvents]);
 
     // Real movesets are fetched per species (cached, falls back to
     // type-derived moves) — resolve them for every combatant up front.
@@ -825,22 +890,27 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     statMod: recruitStatMod(progress.elite),
                     // Hotseat is a friendly: no held-item edge for player 1
                     heldItem: hotseat ? undefined : progress.heldItem,
-                    moves: movesets.get(p.id),
+                    moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                 });
             });
-            const team2 = t2.pokemon.map((p, i) =>
-                createBattleMon(
+            const team2 = t2.pokemon.map((p, i) => {
+                const progress = getMonProgress(profile, p.id);
+                return createBattleMon(
                     p,
                     2,
                     i,
                     // Player 2's mons also fight at persisted levels in hotseat
-                    hotseat ? getMonProgress(profile, p.id).level : enemyLevel(),
+                    hotseat ? progress.level : enemyLevel(),
                     getAbilityForTypes(p.types),
-                    { moves: movesets.get(p.id) }
-                )
-            );
+                    {
+                        // Hotseat player 2 gets their custom sets too
+                        moves: hotseat && progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    }
+                );
+            });
 
             setGauntletStage(null);
+            setLeagueStageId(null);
             gauntletHpRef.current = {};
             setBackdropUrl(backgroundUrl(pickBattleBackgroundId({ rng: Math.random })));
             // Hotseat gives both sides the stock inventory (profile items stay untouched)
@@ -852,7 +922,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 state,
                 hotseat
                     ? `Hotseat battle: ${t1.name} (Player 1) vs ${t2.name} (Player 2)!`
-                    : `Battle started: ${t1.name} vs ${t2.name}!`
+                    : `Battle started: ${t1.name} vs ${t2.name}!`,
+                {
+                    leftLabel: hotseat ? 'Player 1' : t1.name,
+                    leftSprites: t1.pokemon.map(p => getBattleSprites(p.id).artwork),
+                    rightLabel: hotseat ? 'Player 2' : 'AI Trainer',
+                    rightSubLabel: hotseat ? t2.name : capitalize(aiDifficulty),
+                    rightKind: hotseat ? 'human' : 'ai',
+                }
             );
         } finally {
             setStarting(false);
@@ -876,7 +953,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     shiny: progress.shiny,
                     statMod: recruitStatMod(progress.elite),
                     heldItem: progress.heldItem,
-                    moves: movesets.get(p.id),
+                    moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                 });
             });
             const team2 = stage.opponents.map((o, i) =>
@@ -891,9 +968,16 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setAIPersonality(stage.personality);
             setOpponentKind('ai'); // gauntlet is always vs AI
             setGauntletStage(stageIndex);
+            setLeagueStageId(null);
             setBackdropUrl(backgroundUrl(pickBattleBackgroundId({ isBoss: stage.isBoss, rng: Math.random })));
             const state = createEngineState(team1, team2, { 1: { ...profile.items }, 2: createInventory() });
-            launchBattle(state, `Gauntlet stage ${stageIndex}${stage.isBoss ? ' — BOSS BATTLE!' : ''}`);
+            launchBattle(state, `Gauntlet stage ${stageIndex}${stage.isBoss ? ' — BOSS BATTLE!' : ''}`, {
+                leftLabel: t1.name,
+                leftSprites: t1.pokemon.map(p => getBattleSprites(p.id).artwork),
+                rightLabel: 'Gauntlet',
+                rightSubLabel: `Stage ${stageIndex}${stage.isBoss ? ' — BOSS' : ''}`,
+                rightKind: 'ai',
+            });
         } finally {
             setStarting(false);
         }
@@ -902,6 +986,63 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const handleStartGauntlet = () => {
         gauntletHpRef.current = {};
         startGauntletStage(1);
+    };
+
+    const startLeagueStage = async (stage: LeagueStage) => {
+        if (starting) return;
+        const t1 = teams.find(t => t.id === team1Id);
+        if (!t1 || t1.pokemon.length === 0) return;
+
+        setStarting(true);
+        setLeagueError(null);
+        try {
+            const roster = await fetchLeagueTeam(stage);
+            const movesets = await fetchMovesets([...t1.pokemon, ...roster]);
+            const stageLevel = leagueStageLevel(stage, playerAvgLevel(t1));
+
+            const team1 = t1.pokemon.map((p, i) => {
+                const progress = getMonProgress(profile, p.id);
+                return createBattleMon(p, 1, i, progress.level, getAbilityForTypes(p.types), {
+                    shiny: progress.shiny,
+                    statMod: recruitStatMod(progress.elite),
+                    heldItem: progress.heldItem,
+                    moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                });
+            });
+            const team2 = roster.map((p, i) => {
+                const entry = stage.team[i];
+                return createBattleMon(p, 2, i, Math.min(100, stageLevel + entry.levelOffset), getAbilityForTypes(p.types), {
+                    heldItem: entry.heldItem,
+                    moves: movesets.get(p.id),
+                });
+            });
+
+            setOpponentKind('ai');
+            setAIDifficulty(stage.difficulty);
+            setAIPersonality(stage.personality);
+            setGauntletStage(null);
+            gauntletHpRef.current = {};
+            setLeagueStageId(stage.id);
+            setBackdropUrl(backgroundUrl(stage.backdropId));
+            const state = createEngineState(team1, team2, { 1: { ...profile.items }, 2: createInventory() });
+            launchBattle(state, `${stage.title} ${stage.name} challenges you!`, {
+                leftLabel: t1.name,
+                leftSprites: t1.pokemon.map(p => getBattleSprites(p.id).artwork),
+                rightLabel: stage.name,
+                rightSubLabel: stage.title,
+                rightPortrait: trainerPortraitUrl(stage.portrait),
+                rightKind: 'trainer',
+            });
+        } catch {
+            setLeagueError('Couldn’t reach PokeAPI to build the trainer’s team — check your connection and retry.');
+        } finally {
+            setStarting(false);
+        }
+    };
+
+    const handleLeagueContinue = () => {
+        const next = nextLeagueStage(profile.league.defeated);
+        if (next) void startLeagueStage(next);
     };
 
     const handleGauntletContinue = () => {
@@ -923,7 +1064,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         setShowSwitchDialog(false);
         setGauntletStage(null);
         gauntletHpRef.current = {};
+        setLeagueStageId(null);
+        setLeagueError(null);
         setBackdropUrl(null);
+        setIntro(null);
+        pendingBeginRef.current = null;
     };
 
     const handleSelectMove = (move: Move) => {
@@ -1033,6 +1178,17 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         {starting ? 'Preparing…' : 'Start Gauntlet'}
                     </Button>
                 </Paper>
+                <LeagueCard
+                    league={profile.league}
+                    stageLevel={stage => {
+                        const t1 = teams.find(t => t.id === team1Id);
+                        return t1 && t1.pokemon.length > 0 ? leagueStageLevel(stage, playerAvgLevel(t1)) : stage.levelFloor;
+                    }}
+                    starting={starting}
+                    disabled={!team1Id}
+                    error={leagueError}
+                    onChallenge={stage => void startLeagueStage(stage)}
+                />
             </BattleSetup>
         );
     }
@@ -1040,6 +1196,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     // ---------- Battle screen ----------
     return (
         <Dialog open fullScreen PaperProps={{ sx: { background: '#0b1026' } }}>
+            {intro && <VsIntro payload={intro} onDone={handleIntroDone} />}
             {/* Top bar */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <Typography variant="h6" sx={{ color: '#fff', fontWeight: 700 }}>
@@ -1051,6 +1208,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         label={`Stage ${gauntletStage}${isBossStage(gauntletStage) ? ' · BOSS' : ''}`}
                         size="small"
                         sx={{ bgcolor: 'rgba(255, 138, 101, 0.2)', color: '#ff8a65', fontWeight: 700, '& .MuiChip-icon': { color: '#ff8a65' } }}
+                    />
+                )}
+                {leagueStage && (
+                    <Chip
+                        avatar={<Avatar src={trainerPortraitUrl(leagueStage.portrait)} sx={{ imageRendering: 'pixelated' }} />}
+                        label={`${leagueStage.name} — ${leagueStage.title}`}
+                        size="small"
+                        sx={{ bgcolor: 'rgba(255, 215, 0, 0.15)', color: '#ffd700', fontWeight: 700 }}
                     />
                 )}
                 <Chip label={`Turn ${engine.turnCount}`} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.12)', color: '#fff', fontWeight: 700 }} />
@@ -1320,21 +1485,39 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         stageLabel={
                             hotseat
                                 ? `Player ${engine.winner} wins!`
-                                : gauntletStage !== null
+                                : leagueStage
                                     ? engine.winner === 1
-                                        ? `Stage ${gauntletStage} cleared!`
-                                        : `Run over — stage ${gauntletStage}`
+                                        ? leagueStage.badge
+                                            ? `${leagueStage.badge.emoji} ${leagueStage.badge.name} earned!`
+                                            : leagueStage.kind === 'champion'
+                                                ? '🏆 You are the Champion!'
+                                                : `Elite Four ${leagueStage.name} defeated!`
+                                        : `Defeated by ${leagueStage.name}...`
+                                    : gauntletStage !== null
+                                        ? engine.winner === 1
+                                            ? `Stage ${gauntletStage} cleared!`
+                                            : `Run over — stage ${gauntletStage}`
+                                        : undefined
+                        }
+                        onContinue={
+                            leagueStage && engine.winner === 1 && nextLeagueStage(profile.league.defeated)
+                                ? handleLeagueContinue
+                                : gauntletStage !== null && engine.winner === 1
+                                    ? handleGauntletContinue
                                     : undefined
                         }
-                        onContinue={gauntletStage !== null && engine.winner === 1 ? handleGauntletContinue : undefined}
                         onRematch={
-                            gauntletStage === null
-                                ? handleStartBattle
-                                : engine.winner === 1
+                            leagueStage
+                                ? engine.winner === 1
                                     ? undefined
-                                    : handleStartGauntlet
+                                    : () => void startLeagueStage(leagueStage)
+                                : gauntletStage === null
+                                    ? handleStartBattle
+                                    : engine.winner === 1
+                                        ? undefined
+                                        : handleStartGauntlet
                         }
-                        rematchLabel={gauntletStage !== null ? 'New Run' : 'Rematch'}
+                        rematchLabel={leagueStage ? 'Retry' : gauntletStage !== null ? 'New Run' : 'Rematch'}
                         onExit={handleCloseBattle}
                     >
                         {recruitOffer && engine.winner === 1 && (
