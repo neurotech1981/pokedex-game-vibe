@@ -1,125 +1,64 @@
-# Pokémon Battle Game
+# Pokédex Battle Simulator
 
-A fun Pokémon battle game built with React, TypeScript, and Material-UI.
+A full-featured Pokédex and Pokémon battle game built with React 19, TypeScript, three.js and Material-UI. Live Pokémon data from [PokeAPI](https://pokeapi.co).
+
+**Play it:** `https://neurotech1981.github.io/pokedex-game-vibe/`
 
 ## Features
 
-- Team building with Pokémon selection
-- Turn-based battle system
-- Type effectiveness calculations
-- Status effects and weather conditions
-- Battle animations and visual effects
-- Sound effects and background music
-- Battle statistics tracking
+### Pokédex
+- Browse, search and filter the full national dex (live PokeAPI data)
+- Detail pages with stats, evolutions, forms, comparisons — and playable cries
+- Favorites, legendary/mythical filters
+
+### Battle simulator
+- 3D over-the-shoulder battle scenes (react-three-fiber) with world backgrounds
+- Real level-up movesets per Pokémon, customizable in the Team Builder (pick your 4)
+- Deep combat: physical/special split, stat stages, priority, multi-hit, flinch,
+  status conditions with ambient particle auras, weather & terrain, abilities, held items
+- VS intro cinematics, Pokéball send-outs, class-based move FX, camera work, Pokémon cries
+- Heuristic AI with difficulties (beginner → expert, with predictive switching) and personalities
+
+### Ways to play
+- **Quick battle** vs AI or hotseat PvP on one keyboard
+- **Safari expeditions** — explore biomes, weaken wild Pokémon and catch them with Poké Balls
+- **Gauntlet** — endless escalating stages with boss fights
+- **Pokémon League** — 8 Kanto Gym Leaders, the Elite Four and Champion, with badges,
+  post-game Round 2 rematches
+- **Battle Tower** — level-normalized pure-skill streak ladder
+
+### Progression
+- Persistent trainer profile: XP and levels per Pokémon, evolutions, win records
+- Item and Poké Ball economy from battle drops; held-item collection
+- Recruitment, Box storage, shiny and elite Pokémon
+- Achievements and a Trainer Card
 
 ## Development
 
-To run the project locally:
-
 ```bash
-# Install dependencies
 npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
+npm run dev       # Vite dev server
+npm run build     # typecheck + production build
+npm test          # Vitest unit tests (battle engine, AI, progression, ...)
+npm run lint      # ESLint
 ```
 
 ## Deployment
 
-This project is deployed on GitHub Pages. To deploy:
-
-1. Make sure you have the gh-pages package installed:
 ```bash
-npm install --save-dev gh-pages
+npm run deploy    # build + publish dist/ to the gh-pages branch
 ```
 
-2. Deploy to GitHub Pages:
-```bash
-npm run deploy
-```
+Deployed via GitHub Pages from the `gh-pages` branch.
 
-3. Go to your repository settings on GitHub:
-   - Navigate to Settings > Pages
-   - Under "Source", select the "gh-pages" branch
-   - Save the changes
+## Technologies
 
-Your site will be available at: `https://[your-username].github.io/pokedex-game-vibe/`
-
-## Technologies Used
-
-- React
-- TypeScript
-- Vite
-- Material-UI
-- Framer Motion
-- Emotion (for styled components)
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v14 or higher)
-- npm or yarn
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/pokemon-card-game.git
-cd pokemon-card-game
-```
-
-2. Install dependencies:
-```bash
-npm install
-# or
-yarn install
-```
-
-3. Start the development server:
-```bash
-npm run dev
-# or
-yarn dev
-```
-
-4. Open your browser and navigate to `http://localhost:3000`
-
-## How to Play
-
-1. Each player starts with 30 health and 1 mana crystal
-2. Players draw 3 cards at the start of the game
-3. Each turn:
-   - Draw a card (except for the first player's first turn)
-   - Gain a mana crystal (up to 10)
-   - Play cards by spending mana
-   - Attack with minions
-   - Use hero power
-   - End turn
-
-### Card Types
-
-- **Minions**: Creatures that can attack and defend
-- **Spells**: One-time effects that can target minions or heroes
-- **Hero Powers**: Special abilities that can be used once per turn
-
-### Card Effects
-
-- **Battlecry**: Triggers when the card is played
-- **Deathrattle**: Triggers when the card is destroyed
-- **Aura**: Continuous effect while the card is in play
-- **Trigger**: Effect that activates under specific conditions
-
-## Contributing
-
-Feel free to submit issues and enhancement requests!
+- React 19 + TypeScript + Vite
+- Material-UI v7, Emotion, framer-motion
+- three.js / @react-three/fiber / drei for the battle scene
+- TanStack React Query for PokeAPI data
+- Vitest
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).

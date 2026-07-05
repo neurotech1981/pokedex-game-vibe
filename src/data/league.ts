@@ -11,6 +11,9 @@ import { fetchPokemonById } from '../utils/evolution';
  */
 
 export const LEAGUE_XP_MULTIPLIER = 2;
+export const REMATCH_XP_MULTIPLIER = 2.5;
+/** Round-2 rematches are fought this many levels above the normal stage level. */
+export const REMATCH_LEVEL_BONUS = 15;
 
 export interface LeagueBadge {
     name: string;

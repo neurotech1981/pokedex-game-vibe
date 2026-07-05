@@ -4,8 +4,8 @@ import type { TerrainType } from '../types/terrain';
 import { TERRAIN_EFFECTS } from '../types/terrain';
 import type { BoostableStat, DamageClass, Move, StatusType } from '../data/moves';
 import { getDamageClass, getMovesForTypes } from '../data/moves';
-import type { HeldItemId, ItemId, ItemInventory } from '../data/items';
-import { HELD_ITEMS, ITEMS, createInventory } from '../data/items';
+import type { BallId, BallInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
+import { BALLS, HELD_ITEMS, ITEMS, createInventory } from '../data/items';
 import { calculateTypeEffectiveness, TYPE_EFFECTIVENESS, TypeChart } from '../data/typeChart';
 
 export type WeatherType = 'none' | 'rain' | 'sunny' | 'sandstorm' | 'hail';
@@ -66,6 +66,12 @@ export interface EngineState {
     winner: TeamId | null;
     turnCount: number;
     items: { 1: ItemInventory; 2: ItemInventory };
+    /** Wild encounter: a single catchable opponent (Safari mode). */
+    wild?: boolean;
+    /** Poké Balls available to team 1 during a wild encounter. */
+    balls: BallInventory;
+    /** Set to the wild mon's key when a throw succeeds (battle ends). */
+    caught?: string;
 }
 
 export type BattleEvent =
@@ -91,12 +97,16 @@ export type BattleEvent =
     | { kind: 'pass'; team: TeamId }
     | { kind: 'itemUsed'; team: TeamId; monKey: string; itemId: ItemId; itemName: string }
     | { kind: 'heldItem'; monKey: string; itemName: string }
+    | { kind: 'ballThrown'; ballId: BallId; ballName: string; shakes: number }
+    | { kind: 'caught'; monKey: string }
+    | { kind: 'brokeFree'; monKey: string }
     | { kind: 'gameOver'; winner: TeamId };
 
 export type BattleAction =
     | { kind: 'move'; move: Move }
     | { kind: 'switch'; targetKey: string }
     | { kind: 'item'; itemId: ItemId }
+    | { kind: 'throwBall'; ballId: BallId }
     | { kind: 'pass' };
 
 export interface TurnResult {
@@ -140,6 +150,19 @@ export const stageMultiplier = (stage: number): number =>
 export const effectiveSpeed = (mon: BattleMon): number => {
     const base = mon.pokemon.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
     return base * stageMultiplier(mon.stages.speed) * (mon.status?.type === 'paralysis' ? 0.5 : 1);
+};
+
+/**
+ * Chance (0.05–0.9) that a thrown ball catches the wild mon: weaker and
+ * statused targets are easier; legendaries resist.
+ */
+export const catchChance = (mon: BattleMon, ballModifier: number): number => {
+    const hpFactor = 1 - (mon.currentHp / mon.maxHp) * 0.85;
+    const statusBonus = mon.status
+        ? (mon.status.type === 'sleep' || mon.status.type === 'freeze' ? 1.5 : 1.2)
+        : 1;
+    const legendaryFactor = mon.pokemon.is_legendary || mon.pokemon.is_mythical ? 0.5 : 1;
+    return Math.min(0.9, Math.max(0.05, hpFactor * ballModifier * statusBonus * legendaryFactor));
 };
 
 export interface BattleMonOptions {
@@ -190,10 +213,16 @@ export const createBattleMon = (
     };
 };
 
+export interface EngineStateOptions {
+    wild?: boolean;
+    balls?: BallInventory;
+}
+
 export const createEngineState = (
     team1: BattleMon[],
     team2: BattleMon[],
-    items?: { 1: ItemInventory; 2: ItemInventory }
+    items?: { 1: ItemInventory; 2: ItemInventory },
+    opts: EngineStateOptions = {}
 ): EngineState => {
     const mons: Record<string, BattleMon> = {};
     [...team1, ...team2].forEach(mon => { mons[mon.key] = mon; });
@@ -213,6 +242,8 @@ export const createEngineState = (
         winner: null,
         turnCount: 1,
         items: items ?? { 1: createInventory(), 2: createInventory() },
+        wild: opts.wild,
+        balls: opts.balls ?? {},
     };
 };
 
@@ -379,6 +410,7 @@ const cloneState = (state: EngineState): EngineState => ({
     active: { ...state.active },
     acted: { ...state.acted },
     items: { 1: { ...state.items[1] }, 2: { ...state.items[2] } },
+    balls: { ...state.balls },
 });
 
 const applyStatStage = (
@@ -681,6 +713,38 @@ export const resolveAction = (
         }
         actor.priorityMomentum = 0;
         state.items[team][action.itemId] -= 1;
+        applyEndOfTurn(state, actor, events, rng);
+        return { state, events };
+    }
+
+    if (action.kind === 'throwBall') {
+        // Only team 1 can throw, only at wild Pokémon, only with balls left
+        if (!state.wild || team !== 1 || (state.balls[action.ballId] ?? 0) <= 0) {
+            return { state: prevState, events };
+        }
+        actor.priorityMomentum = 0;
+        state.balls[action.ballId] = (state.balls[action.ballId] ?? 0) - 1;
+
+        const target = getActiveMon(state, 2);
+        const ball = BALLS[action.ballId];
+        const chance = catchChance(target, ball.modifier);
+        const roll = rng();
+        const success = roll < chance;
+        // Near misses shake more — pure drama, no mechanical effect
+        const shakes = success ? 3 : roll < chance * 1.5 ? 2 : roll < chance * 2.5 ? 1 : 0;
+        events.push({ kind: 'ballThrown', ballId: action.ballId, ballName: ball.name, shakes });
+
+        if (success) {
+            state.caught = target.key;
+            state.phase = 'gameOver';
+            state.winner = 1;
+            state.pendingSwitch = null;
+            events.push({ kind: 'caught', monKey: target.key });
+            events.push({ kind: 'gameOver', winner: 1 });
+            return { state, events };
+        }
+
+        events.push({ kind: 'brokeFree', monKey: target.key });
         applyEndOfTurn(state, actor, events, rng);
         return { state, events };
     }

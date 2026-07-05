@@ -1,6 +1,6 @@
 import type { Pokemon } from '../types/pokemon';
 import type { Move } from '../data/moves';
-import type { HeldInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
+import type { BallId, BallInventory, HeldInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { createInventory } from '../data/items';
 
 /**
@@ -32,6 +32,11 @@ export interface PlayerRecords {
     bestStreak: number;
     totalBattles: number;
     gauntletBestStage: number;
+    /** Wild Pokémon caught with balls (Safari mode). */
+    caught: number;
+    /** Current and best Battle Tower win streaks. */
+    towerStreak: number;
+    towerBestStreak: number;
 }
 
 /** A recruited Pokémon parked outside any team. */
@@ -46,6 +51,8 @@ export interface LeagueProgress {
     /** League stage ids beaten, in any storage order (gating is positional). */
     defeated: string[];
     champion: boolean;
+    /** Gym ids beaten again in post-game Round 2 rematches. */
+    defeatedRematches: string[];
 }
 
 export interface PlayerProfile {
@@ -58,6 +65,9 @@ export interface PlayerProfile {
     records: PlayerRecords;
     box: BoxPokemon[];
     league: LeagueProgress;
+    balls: BallInventory;
+    /** Earned achievement ids (see src/utils/achievements.ts). */
+    achievements: string[];
 }
 
 export const createProfile = (): PlayerProfile => ({
@@ -65,9 +75,11 @@ export const createProfile = (): PlayerProfile => ({
     mons: {},
     items: createInventory(),
     heldItems: {},
-    records: { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, totalBattles: 0, gauntletBestStage: 0 },
+    records: { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, totalBattles: 0, gauntletBestStage: 0, caught: 0, towerStreak: 0, towerBestStreak: 0 },
     box: [],
-    league: { defeated: [], champion: false },
+    league: { defeated: [], champion: false, defeatedRematches: [] },
+    balls: { pokeball: 5 },
+    achievements: [],
 });
 
 export const getMonProgress = (profile: PlayerProfile, pokemonId: number): MonProgress =>
@@ -182,6 +194,15 @@ export const updateRecords = (records: PlayerRecords, won: boolean): PlayerRecor
 
 /** Merge item drops into an inventory. */
 export const addItems = (inventory: ItemInventory, drops: ItemId[]): ItemInventory => {
+    const next = { ...inventory };
+    for (const id of drops) {
+        next[id] = (next[id] ?? 0) + 1;
+    }
+    return next;
+};
+
+/** Merge ball drops into the owned pool. */
+export const addBalls = (inventory: BallInventory, drops: BallId[]): BallInventory => {
     const next = { ...inventory };
     for (const id of drops) {
         next[id] = (next[id] ?? 0) + 1;

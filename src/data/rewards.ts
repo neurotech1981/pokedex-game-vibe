@@ -1,4 +1,4 @@
-import type { HeldItemId, ItemId } from './items';
+import type { BallId, HeldItemId, ItemId } from './items';
 import { HELD_ITEM_IDS } from './items';
 import type { Rng } from '../utils/battleEngine';
 
@@ -38,4 +38,14 @@ export const rollHeldItemDrop = (streak: number, isBoss: boolean, rng: Rng): Hel
     if (!isBoss && !(streak > 0 && streak % 3 === 0)) return null;
     if (rng() >= 0.15) return null;
     return HELD_ITEM_IDS[Math.floor(rng() * HELD_ITEM_IDS.length)] ?? null;
+};
+
+/**
+ * Poké Ball drops keep Safari mode fed: 40% chance of a Poké Ball on any
+ * win; bosses and streak milestones upgrade to Great/Ultra Balls.
+ */
+export const rollBallDrop = (streak: number, isBoss: boolean, rng: Rng): BallId | null => {
+    if (isBoss) return rng() < 0.5 ? 'ultraball' : 'greatball';
+    if (streak > 0 && streak % 3 === 0) return 'greatball';
+    return rng() < 0.4 ? 'pokeball' : null;
 };

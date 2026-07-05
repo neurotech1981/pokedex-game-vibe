@@ -20,6 +20,10 @@ export interface SceneFx {
     isDamaging: boolean;
     /** Set when this fx sequence ended in a faint (drives the camera dolly). */
     faintedTeam?: TeamId;
+    /** A Poké Ball was thrown at the wild mon (Safari mode). */
+    ballThrow?: { shakes: number; caught: boolean };
+    /** Move name — a handful of iconic moves get bespoke FX. */
+    moveName?: string;
 }
 
 interface BattleScene3DProps {
@@ -222,6 +226,12 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
         if (!group || !mat) return;
         const t = clock.getElapsedTime();
 
+        if (fx && fx.id !== lastFxId.current) {
+            lastFxId.current = fx.id;
+            fxStart.current = t;
+        }
+        const fxElapsed = fx ? t - fxStart.current : 99;
+
         // Pokéball send-out: ball arcs in, flash, sprite materializes
         if (entryStart.current === null) entryStart.current = t;
         const entry = t - entryStart.current;
@@ -250,14 +260,18 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
                 flash.visible = false;
             }
         }
-        const spriteScale = entering ? Math.max(0, Math.min(1, (entry - 0.35) / 0.35)) : 1;
-        spriteRef.current?.scale.set(width * spriteScale, scale * spriteScale, 1);
+        let spriteScale = entering ? Math.max(0, Math.min(1, (entry - 0.35) / 0.35)) : 1;
 
-        if (fx && fx.id !== lastFxId.current) {
-            lastFxId.current = fx.id;
-            fxStart.current = t;
+        // Safari: the wild mon gets absorbed into a thrown ball, and pops
+        // back out only if it breaks free
+        const ballFx = fx?.ballThrow && mon.team === 2 ? fx.ballThrow : null;
+        if (ballFx) {
+            const ballTotal = 0.4 + ballFx.shakes * 0.35;
+            if (fxElapsed >= 0.25 && fxElapsed < 0.45) spriteScale *= 1 - (fxElapsed - 0.25) / 0.2;
+            else if (fxElapsed >= 0.45 && fxElapsed < ballTotal + 0.2) spriteScale = 0;
+            else if (fxElapsed >= ballTotal + 0.2) spriteScale *= ballFx.caught ? 0 : Math.min(1, (fxElapsed - ballTotal - 0.2) / 0.25);
         }
-        const fxElapsed = fx ? t - fxStart.current : 99;
+        spriteRef.current?.scale.set(width * spriteScale, scale * spriteScale, 1);
 
         // Faint: sink + fade out
         if (isFainted) {
@@ -271,7 +285,7 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
         let x = position[0];
         let z = position[2];
         const y = position[1] + Math.sin(t * 2 + phase) * 0.07;
-        let tint = 0xffffff;
+        let tint = mon.status?.type === 'freeze' ? 0x9fd8ff : 0xffffff; // icy sheen
 
         // Attack lunge toward the opponent (harder for physical moves)
         if (isAttacker && fxElapsed < 0.45 && !entering) {
@@ -330,6 +344,8 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
                     depthWrite={false}
                 />
             </mesh>
+            {/* Ambient status particles (poison bubbles, embers, Zzz...) */}
+            {mon.status && !isFainted && <StatusAura status={mon.status.type} height={scale} />}
             {/* Soft glow behind the sprite (gold for shiny/elite mons), fading radially */}
             <mesh position={[0, -0.05, side === 1 ? 0.15 : -0.15]}>
                 <planeGeometry args={[scale * 1.15, scale * 1.15]} />
@@ -361,7 +377,7 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
 // Move-class FX: special = beam, physical = slash crescent, status = sparkles
 // ---------------------------------------------------------------------------
 
-const BeamEffect: React.FC<{ from: [number, number, number]; to: [number, number, number]; color: string }> = ({ from, to, color }) => {
+const BeamEffect: React.FC<{ from: [number, number, number]; to: [number, number, number]; color: string; thickness?: number }> = ({ from, to, color, thickness = 1 }) => {
     const meshRef = useRef<THREE.Mesh>(null);
     const matRef = useRef<THREE.MeshBasicMaterial>(null);
     const start = useRef<number | null>(null);
@@ -388,8 +404,8 @@ const BeamEffect: React.FC<{ from: [number, number, number]; to: [number, number
             return;
         }
         mesh.visible = true;
-        const thickness = elapsed < 0.12 ? (elapsed / 0.12) * 0.5 : 0.5;
-        mesh.scale.set(1, thickness, 1);
+        const grow = (elapsed < 0.12 ? (elapsed / 0.12) * 0.5 : 0.5) * thickness;
+        mesh.scale.set(1, grow, 1);
         mat.opacity = elapsed < 0.12 ? 0.95 : 0.95 * (1 - (elapsed - 0.12) / 0.26);
     });
 
@@ -497,6 +513,260 @@ const SparkleEffect: React.FC<{ at: [number, number, number]; color: string }> =
                 sizeAttenuation
             />
         </points>
+    );
+};
+
+// A handful of iconic moves get bespoke FX instead of the class defaults
+const MOVE_FX_OVERRIDES: Record<string, { vertical?: boolean; beamScale?: number; quake?: boolean }> = {
+    'Thunderbolt': { vertical: true },
+    'Thunder': { vertical: true },
+    'Zap Cannon': { vertical: true },
+    'Hyper Beam': { beamScale: 2 },
+    'Solar Beam': { beamScale: 1.8 },
+    'Fire Blast': { beamScale: 1.5 },
+    'Earthquake': { quake: true },
+    'Magnitude': { quake: true },
+};
+
+/** Vertical lightning bolt crashing down on the target (Thunder/Thunderbolt). */
+const LightningStrike: React.FC<{ at: [number, number, number]; color: string }> = ({ at, color }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const start = useRef<number | null>(null);
+
+    useFrame(({ clock }) => {
+        const mesh = meshRef.current;
+        const mat = matRef.current;
+        if (!mesh || !mat) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const elapsed = t - start.current - 0.15;
+        if (elapsed < 0 || elapsed >= 0.45) {
+            mesh.visible = false;
+            return;
+        }
+        mesh.visible = true;
+        // Double flicker: bright → dim → bright → fade
+        const flicker = elapsed < 0.08 ? 1 : elapsed < 0.14 ? 0.35 : elapsed < 0.24 ? 0.95 : Math.max(0, 1 - (elapsed - 0.24) / 0.21);
+        mat.opacity = flicker;
+        mesh.scale.x = 0.6 + Math.sin(elapsed * 80) * 0.15; // crackle
+    });
+
+    return (
+        <mesh ref={meshRef} position={[at[0], at[1] + 2.4, at[2] + 0.3]} visible={false}>
+            <planeGeometry args={[0.7, 7]} />
+            <meshBasicMaterial
+                ref={matRef}
+                map={getRadialTexture()}
+                color={color}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+            />
+        </mesh>
+    );
+};
+
+// Looping ambient particles while a status condition is active
+const STATUS_AURA: Record<string, { color: string; count: number; rise: number; spread: number; size: number; flicker?: boolean }> = {
+    poison: { color: '#c060e0', count: 10, rise: 0.5, spread: 1.1, size: 0.16 },
+    burn: { color: '#ff7043', count: 12, rise: 0.9, spread: 0.8, size: 0.11 },
+    sleep: { color: '#cfd8dc', count: 5, rise: 0.35, spread: 0.6, size: 0.2 },
+    paralysis: { color: '#ffe54c', count: 8, rise: 0.15, spread: 1.1, size: 0.13, flicker: true },
+    freeze: { color: '#81d4fa', count: 10, rise: 0.05, spread: 1.0, size: 0.14 },
+    confusion: { color: '#ce93d8', count: 7, rise: 0.12, spread: 1.3, size: 0.16, flicker: true },
+};
+
+const StatusAura: React.FC<{ status: string; height: number }> = ({ status, height }) => {
+    const pointsRef = useRef<THREE.Points>(null);
+    const matRef = useRef<THREE.PointsMaterial>(null);
+    const cfg = STATUS_AURA[status];
+    const seeds = useMemo(
+        () => Array.from({ length: cfg?.count ?? 8 }, () => [Math.random(), Math.random(), Math.random()] as const),
+        [cfg]
+    );
+    const positions = useMemo(() => new Float32Array((cfg?.count ?? 8) * 3), [cfg]);
+
+    useFrame(({ clock }) => {
+        const points = pointsRef.current;
+        const mat = matRef.current;
+        if (!points || !mat || !cfg) return;
+        const t = clock.getElapsedTime();
+        const attr = points.geometry.getAttribute('position') as THREE.BufferAttribute;
+        seeds.forEach(([sx, sy, sz], i) => {
+            const cycle = (sy + t * cfg.rise * 0.5) % 1;
+            attr.setXYZ(
+                i,
+                (sx - 0.5) * cfg.spread + Math.sin(t * 1.5 + sx * 9) * 0.08,
+                -height / 2 + cycle * height,
+                (sz - 0.5) * 0.5 + 0.3
+            );
+        });
+        attr.needsUpdate = true;
+        mat.opacity = cfg.flicker ? 0.35 + Math.abs(Math.sin(t * 6)) * 0.55 : 0.75;
+    });
+
+    if (!cfg) return null;
+    return (
+        <points ref={pointsRef}>
+            <bufferGeometry>
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+            </bufferGeometry>
+            <pointsMaterial
+                ref={matRef}
+                color={cfg.color}
+                size={cfg.size}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                sizeAttenuation
+            />
+        </points>
+    );
+};
+
+// Tinted full-view flash when the weather turns (remounts via key={weather})
+const WEATHER_FLASH_COLOR: Record<WeatherType, string | null> = {
+    none: null,
+    rain: '#4a90d9',
+    sunny: '#ffcc66',
+    sandstorm: '#d9b36b',
+    hail: '#bfe3f2',
+};
+
+const WeatherFlash: React.FC<{ weather: WeatherType }> = ({ weather }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const start = useRef<number | null>(null);
+    const { camera } = useThree();
+    const color = WEATHER_FLASH_COLOR[weather];
+
+    const placement = useMemo(() => {
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        return {
+            position: camera.position.clone().add(direction.multiplyScalar(3)),
+            quaternion: camera.quaternion.clone(),
+        };
+    }, [camera]);
+
+    useFrame(({ clock }) => {
+        const mesh = meshRef.current;
+        const mat = matRef.current;
+        if (!mesh || !mat) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const elapsed = t - start.current;
+        if (elapsed >= 0.6 || !color) {
+            mesh.visible = false;
+            return;
+        }
+        mesh.visible = true;
+        mat.opacity = 0.5 * (1 - elapsed / 0.6);
+    });
+
+    if (!color) return null;
+    return (
+        <mesh ref={meshRef} position={placement.position} quaternion={placement.quaternion} visible={false} renderOrder={10}>
+            <planeGeometry args={[12, 8]} />
+            <meshBasicMaterial ref={matRef} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} fog={false} toneMapped={false} />
+        </mesh>
+    );
+};
+
+/**
+ * Safari catch sequence: ball arcs to the wild mon, wobbles `shakes` times,
+ * then locks (caught: white flash, ball stays) or bursts open (broke free).
+ */
+const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes, caught }) => {
+    const ballRef = useRef<THREE.Mesh>(null);
+    const flashRef = useRef<THREE.Mesh>(null);
+    const flashMatRef = useRef<THREE.MeshBasicMaterial>(null);
+    const start = useRef<number | null>(null);
+
+    const FLIGHT = 0.4;
+    const SHAKE = 0.35;
+    const total = FLIGHT + shakes * SHAKE;
+
+    useFrame(({ clock }) => {
+        const ball = ballRef.current;
+        const flash = flashRef.current;
+        const flashMat = flashMatRef.current;
+        if (!ball || !flash || !flashMat) return;
+        const t = clock.getElapsedTime();
+        if (start.current === null) start.current = t;
+        const elapsed = t - start.current;
+
+        if (elapsed < FLIGHT) {
+            // Arc from the player's side to the wild mon
+            const p = elapsed / FLIGHT;
+            ball.visible = true;
+            ball.position.set(
+                PLAYER_POS[0] + (ENEMY_POS[0] - PLAYER_POS[0]) * p,
+                PLAYER_POS[1] + (ENEMY_POS[1] - PLAYER_POS[1]) * p + Math.sin(p * Math.PI) * 1.4,
+                PLAYER_POS[2] + (ENEMY_POS[2] - PLAYER_POS[2]) * p + 0.4
+            );
+            ball.rotation.z = -p * Math.PI * 3;
+            flash.visible = false;
+            return;
+        }
+
+        // Sitting at the target, wobbling
+        const sitX = ENEMY_POS[0];
+        const sitY = ENEMY_POS[1] - 0.6;
+        ball.position.set(sitX, sitY, ENEMY_POS[2] + 0.4);
+        if (elapsed < total) {
+            const shakePhase = ((elapsed - FLIGHT) % SHAKE) / SHAKE;
+            ball.rotation.z = Math.sin(shakePhase * Math.PI * 2) * 0.4;
+            return;
+        }
+
+        // Verdict
+        const after = elapsed - total;
+        if (caught) {
+            ball.visible = after < 1.6;
+            ball.rotation.z = 0;
+            if (after < 0.45) {
+                flash.visible = true;
+                flash.position.set(sitX, sitY, ENEMY_POS[2] + 0.5);
+                flash.scale.setScalar(0.6 + after * 4);
+                flashMat.color.set('#ffffff');
+                flashMat.opacity = 0.9 * (1 - after / 0.45);
+            } else {
+                flash.visible = false;
+            }
+        } else {
+            ball.visible = false;
+            if (after < 0.35) {
+                flash.visible = true;
+                flash.position.set(sitX, sitY + 0.3, ENEMY_POS[2] + 0.5);
+                flash.scale.setScalar(0.8 + after * 5);
+                flashMat.color.set('#ff8a65');
+                flashMat.opacity = 0.8 * (1 - after / 0.35);
+            } else {
+                flash.visible = false;
+            }
+        }
+    });
+
+    return (
+        <>
+            <mesh ref={ballRef} visible={false}>
+                <planeGeometry args={[0.6, 0.6]} />
+                <meshBasicMaterial map={getPokeballTexture()} transparent alphaTest={0.1} toneMapped={false} />
+            </mesh>
+            <mesh ref={flashRef} visible={false}>
+                <planeGeometry args={[1, 1]} />
+                <meshBasicMaterial
+                    ref={flashMatRef}
+                    map={getRadialTexture()}
+                    transparent
+                    blending={THREE.AdditiveBlending}
+                    depthWrite={false}
+                />
+            </mesh>
+        </>
     );
 };
 
@@ -651,6 +921,7 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
     const fog = WEATHER_FOG[weather];
     const targetIsPlayer = fx !== null && fx.attackerTeam === 2;
     const targetPos = targetIsPlayer ? PLAYER_POS : ENEMY_POS;
+    const fxOverride = fx?.moveName ? MOVE_FX_OVERRIDES[fx.moveName] : undefined;
 
     return (
         <>
@@ -730,15 +1001,19 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                     glowColor={getTypeColor(rightMon.pokemon.types[0])}
                 />
             )}
-            {fx && fx.isDamaging && fx.damageClass === 'special' && (
+            {fx && fx.isDamaging && fxOverride?.vertical && (
+                <LightningStrike key={`bolt-${fx.id}`} at={targetPos} color={getTypeColor(fx.moveType)} />
+            )}
+            {fx && fx.isDamaging && !fxOverride?.vertical && !fxOverride?.quake && fx.damageClass === 'special' && (
                 <BeamEffect
                     key={`beam-${fx.id}`}
                     from={targetIsPlayer ? ENEMY_POS : PLAYER_POS}
                     to={targetPos}
                     color={getTypeColor(fx.moveType)}
+                    thickness={fxOverride?.beamScale ?? 1}
                 />
             )}
-            {fx && fx.isDamaging && fx.damageClass !== 'special' && (
+            {fx && fx.isDamaging && !fxOverride?.vertical && !fxOverride?.quake && fx.damageClass !== 'special' && (
                 <SlashEffect key={`slash-${fx.id}`} at={targetPos} color={getTypeColor(fx.moveType)} />
             )}
             {fx && !fx.isDamaging && fx.damageClass === 'status' && (
@@ -747,6 +1022,9 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                     at={fx.attackerTeam === 1 ? PLAYER_POS : ENEMY_POS}
                     color={getTypeColor(fx.moveType)}
                 />
+            )}
+            {fx?.ballThrow && (
+                <CatchBallEffect key={`catch-${fx.id}`} shakes={fx.ballThrow.shakes} caught={fx.ballThrow.caught} />
             )}
             <CameraRig fx={fx} />
             <Suspense fallback={null}>
@@ -773,20 +1051,21 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
             <WeatherParticles weather={weather} />
             <TerrainParticles terrain={terrain} />
 
-            {fx?.isCritical && (
+            {(fx?.isCritical || (fx?.isDamaging && fxOverride?.quake)) && (
                 <CameraShake
                     key={fx.id}
-                    maxYaw={0.03}
-                    maxPitch={0.03}
-                    maxRoll={0.02}
+                    maxYaw={fxOverride?.quake ? 0.07 : 0.03}
+                    maxPitch={fxOverride?.quake ? 0.07 : 0.03}
+                    maxRoll={fxOverride?.quake ? 0.05 : 0.02}
                     yawFrequency={9}
                     pitchFrequency={9}
                     rollFrequency={7}
                     intensity={1}
                     decay
-                    decayRate={1.8}
+                    decayRate={fxOverride?.quake ? 1.2 : 1.8}
                 />
             )}
+            <WeatherFlash key={`wf-${weather}`} weather={weather} />
         </>
     );
 };

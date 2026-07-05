@@ -218,6 +218,34 @@ export const setVolume = (newVolume: number) => {
 export const getVolume = () => volume;
 
 // ---------------------------------------------------------------------------
+// Pokémon cries, streamed from the PokeAPI cries mirror (keyed by dex id).
+// ---------------------------------------------------------------------------
+
+const CRY_BASE = 'https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest';
+const cryCache = new Map<number, HTMLAudioElement>();
+
+/**
+ * Play a Pokémon's cry (send-out, faint, Pokédex button). Best-effort:
+ * missing files, blocked autoplay and offline all fail silently.
+ */
+export const playCry = (pokemonId: number, volumeScale = 1) => {
+  try {
+    let audio = cryCache.get(pokemonId);
+    if (!audio) {
+      audio = new Audio(`${CRY_BASE}/${pokemonId}.ogg`);
+      audio.preload = 'auto';
+      audio.onerror = () => undefined;
+      cryCache.set(pokemonId, audio);
+    }
+    audio.volume = Math.max(0, Math.min(1, volume * volumeScale));
+    audio.currentTime = 0;
+    void audio.play().catch(() => undefined);
+  } catch {
+    // Audio unavailable (SSR/headless) — cries are flavor only
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Synthesized chimes (no audio assets needed): short oscillator arpeggios
 // for meta-game moments. Respects the SFX volume; silently no-ops when the
 // browser's autoplay policy keeps the AudioContext suspended.

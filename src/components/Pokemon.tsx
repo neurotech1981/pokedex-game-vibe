@@ -43,9 +43,12 @@ import SearchIcon from '@mui/icons-material/Search';
 import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
 import StarsIcon from '@mui/icons-material/Stars';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import { playCry } from '../utils/soundEffects';
 import TypeEffectiveness from './TypeEffectiveness';
 import TeamBuilder from './TeamBuilder';
 import BattleSimulator from './BattleSimulator';
+import TrainerCard from './TrainerCard';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import type { QueryFunctionContext } from '@tanstack/react-query';
 import { useDebounce } from 'use-debounce';
@@ -758,9 +761,16 @@ const Pokemon: React.FC = () => {
                                 }}
                             />
                             <Box sx={{ flex: 1 }}>
-                                <Typography variant="h4" gutterBottom sx={{ textTransform: 'capitalize' }}>
-                                    {selectedPokemon.name}
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography variant="h4" gutterBottom sx={{ textTransform: 'capitalize' }}>
+                                        {selectedPokemon.name}
+                                    </Typography>
+                                    <Tooltip title="Play cry">
+                                        <IconButton aria-label="play cry" onClick={() => playCry(selectedPokemon.id)} sx={{ mb: 1 }}>
+                                            <VolumeUpIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                </Box>
                                 <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
                                     {selectedPokemon.types.map((type) => (
                                         <Chip
@@ -1123,6 +1133,7 @@ const Pokemon: React.FC = () => {
                         <Tab label="Team Builder" />
                         <Tab label="Type Calculator" />
                         <Tab label="Battle" />
+                        <Tab label="Trainer" />
                     </Tabs>
                 </Toolbar>
             </AppBar>
@@ -1443,6 +1454,8 @@ const Pokemon: React.FC = () => {
                     updateProfile={updateProfile}
                 />
             )}
+
+            {mainTab === 4 && <TrainerCard profile={profile} />}
 
             <Modal
                 open={!!selectedPokemon}

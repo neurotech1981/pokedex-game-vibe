@@ -21,6 +21,7 @@ import type { LeagueStage } from '../../data/league';
 import {
     GYM_STAGES,
     LEAGUE_STAGES,
+    REMATCH_LEVEL_BONUS,
     nextLeagueStage,
     trainerPortraitUrl,
 } from '../../data/league';
@@ -34,7 +35,7 @@ interface LeagueCardProps {
     /** No team selected yet. */
     disabled: boolean;
     error: string | null;
-    onChallenge: (stage: LeagueStage) => void;
+    onChallenge: (stage: LeagueStage, rematch?: boolean) => void;
 }
 
 const LeagueCard: React.FC<LeagueCardProps> = ({ league, stageLevel, starting, disabled, error, onChallenge }) => {
@@ -122,6 +123,42 @@ const LeagueCard: React.FC<LeagueCardProps> = ({ league, stageLevel, starting, d
                 <Typography variant="body2" sx={{ mt: 2, color: '#ffd700', fontWeight: 700 }}>
                     The League is conquered. You are the Champion!
                 </Typography>
+            )}
+
+            {/* Post-game: Round 2 gym rematches */}
+            {league.champion && (
+                <Box sx={{ mt: 2.5 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                        Round 2 — the Gym Leaders want revenge
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        +{REMATCH_LEVEL_BONUS} levels · ×2.5 XP · rematch any time
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 0.75, mt: 1, flexWrap: 'wrap' }}>
+                        {GYM_STAGES.map(stage => {
+                            const beaten = league.defeatedRematches.includes(stage.id);
+                            return (
+                                <Tooltip key={stage.id} title={`${stage.name} — around Lv ${stageLevel(stage) + REMATCH_LEVEL_BONUS}${beaten ? ' · defeated' : ''}`}>
+                                    <span>
+                                        <Chip
+                                            avatar={<Avatar src={trainerPortraitUrl(stage.portrait)} sx={{ imageRendering: 'pixelated' }} />}
+                                            label={`${stage.badge!.emoji} ${stage.name}${beaten ? ' ✓' : ''}`}
+                                            size="small"
+                                            clickable
+                                            disabled={starting || disabled}
+                                            onClick={() => onChallenge(stage, true)}
+                                            sx={{
+                                                fontWeight: 700,
+                                                bgcolor: beaten ? 'rgba(102, 187, 106, 0.18)' : 'rgba(255,255,255,0.08)',
+                                                color: beaten ? '#66bb6a' : 'text.primary',
+                                            }}
+                                        />
+                                    </span>
+                                </Tooltip>
+                            );
+                        })}
+                    </Box>
+                </Box>
             )}
 
             {/* Full ladder */}

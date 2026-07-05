@@ -127,3 +127,42 @@ export const HELD_ITEM_IDS: HeldItemId[] = [
 ];
 
 export type HeldInventory = Partial<Record<HeldItemId, number>>;
+
+// ---------------------------------------------------------------------------
+// Poké Balls: thrown at wild Pokémon in Safari encounters.
+// ---------------------------------------------------------------------------
+
+export type BallId = 'pokeball' | 'greatball' | 'ultraball';
+
+export interface Ball {
+    id: BallId;
+    name: string;
+    description: string;
+    /** Multiplies the base catch chance. */
+    modifier: number;
+}
+
+export const BALLS: Record<BallId, Ball> = {
+    pokeball: {
+        id: 'pokeball',
+        name: 'Poké Ball',
+        description: 'A standard ball for catching wild Pokémon.',
+        modifier: 1,
+    },
+    greatball: {
+        id: 'greatball',
+        name: 'Great Ball',
+        description: 'A high-performance ball — 1.5× catch rate.',
+        modifier: 1.5,
+    },
+    ultraball: {
+        id: 'ultraball',
+        name: 'Ultra Ball',
+        description: 'An ultra-high-performance ball — 2× catch rate.',
+        modifier: 2,
+    },
+};
+
+export const BALL_IDS: BallId[] = ['pokeball', 'greatball', 'ultraball'];
+
+export type BallInventory = Partial<Record<BallId, number>>;

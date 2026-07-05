@@ -41,16 +41,14 @@ import type { Pokemon, Team } from '../types/pokemon';
 import type { TerrainType } from '../types/terrain';
 import { getAbilityForTypes } from '../types/abilities';
 import type { Move } from '../data/moves';
-import type { HeldItemId, ItemId } from '../data/items';
-import { ITEMS, ITEM_IDS, createInventory } from '../data/items';
-import { rollBattleRewards, rollHeldItemDrop } from '../data/rewards';
+import type { ItemId } from '../data/items';
+import { BALLS, BALL_IDS, ITEMS, ITEM_IDS, createInventory } from '../data/items';
 import type { TypeChart } from '../data/typeChart';
 import type {
     BattleAction,
     BattleMon,
     EngineState,
     TeamId,
-    TurnResult,
     WeatherType,
 } from '../utils/battleEngine';
 import {
@@ -67,29 +65,30 @@ import {
 } from '../utils/battleEngine';
 import type { AIDifficulty, AIPersonality } from '../utils/battleAI';
 import { selectAIAction, selectAIForcedSwitch } from '../utils/battleAI';
-import type { SceneFx } from './battle/BattleScene3D';
 import BattleScene3D from './battle/BattleScene3D';
 import BattleLog from './battle/BattleLog';
 import MoveSelection from './battle/MoveSelection';
 import FloatingCombatText from './FloatingCombatText';
-import type { MonBattleStats } from './battle/PostBattlePanel';
 import PostBattlePanel from './battle/PostBattlePanel';
 import BattleSetup, { RANDOM_ID } from './battle/BattleSetup';
-import type { PlayerProfile, XpGain } from '../utils/progression';
-import { addHeldItems, addItems, applyBattleXp, getMonProgress, registerMonProgress, updateRecords } from '../utils/progression';
+import type { PlayerProfile } from '../utils/progression';
+import { getMonProgress } from '../utils/progression';
 import {
     GAUNTLET_XP_MULTIPLIER,
     createGauntletStage,
     isBossStage,
     nextStageHpPct,
 } from '../utils/gauntlet';
-import type { RecruitOffer } from '../utils/recruitment';
-import { recruitStatMod, rollRecruit } from '../utils/recruitment';
-import { getFullLearnset, getMovesetForPokemon } from '../utils/movesets';
+import { recruitStatMod } from '../utils/recruitment';
+import { getMovesetForPokemon } from '../utils/movesets';
+import type { Biome } from '../utils/safari';
+import { BIOMES, getBiome, rollWildEncounter } from '../utils/safari';
+import { getAchievement } from '../utils/achievements';
+import { TOWER_LEVEL, TOWER_TEAM_SIZE, isTowerBossBattle, pickTowerOpponents } from '../utils/tower';
 import { backgroundUrl, pickBattleBackgroundId } from '../data/battleBackgrounds';
 import type { LeagueStage } from '../data/league';
 import {
-    LEAGUE_XP_MULTIPLIER,
+    REMATCH_LEVEL_BONUS,
     fetchLeagueTeam,
     getLeagueStage,
     leagueStageLevel,
@@ -99,14 +98,15 @@ import {
 import LeagueCard from './battle/LeagueCard';
 import type { VsIntroPayload } from './battle/VsIntro';
 import VsIntro from './battle/VsIntro';
+import { useBattleEvents } from '../hooks/useBattleEvents';
+import { useBattleResults } from '../hooks/useBattleResults';
+import { STATUS_COLORS, STATUS_LABELS, STAT_ABBR, WEATHER_LABELS, capitalize, hpColor } from './battle/battleUi';
 import { getBattleSprites } from '../utils/spriteSources';
-import { fetchPokemonById, getEvolutionTarget } from '../utils/evolution';
 import RecruitOfferCard from './battle/RecruitOfferCard';
-import type { PendingEvolution } from './battle/EvolutionPrompt';
 import EvolutionPrompt from './battle/EvolutionPrompt';
 import {
     getVolume,
-    playChime,
+    playCry,
     playMusic,
     playSound,
     preloadSounds,
@@ -135,52 +135,6 @@ const generateRandomTeam = (pokemons: Pokemon[], size = 6): Team => {
     return { id: RANDOM_ID, name: 'Random Team', pokemon: pool.slice(0, Math.min(size, pool.length)) };
 };
 
-interface LogEntry {
-    id: number;
-    message: string;
-    type: 'normal' | 'critical' | 'death' | 'victory';
-    timestamp: number;
-}
-
-interface FloatingText {
-    id: number;
-    text: string;
-    color: string;
-    side: TeamId;
-    type: 'damage' | 'status' | 'effectiveness';
-}
-
-const STATUS_LABELS: Record<string, string> = {
-    paralysis: 'PAR',
-    sleep: 'SLP',
-    poison: 'PSN',
-    burn: 'BRN',
-    freeze: 'FRZ',
-    confusion: 'CNF',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-    paralysis: '#ffc107',
-    sleep: '#9e9e9e',
-    poison: '#9c27b0',
-    burn: '#f44336',
-    freeze: '#2196f3',
-    confusion: '#7e57c2',
-};
-
-const WEATHER_LABELS: Record<WeatherType, string> = {
-    none: 'Clear',
-    rain: 'Rain',
-    sunny: 'Sunny',
-    sandstorm: 'Sandstorm',
-    hail: 'Hail',
-};
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-const STAT_ABBR: Record<string, string> = { attack: 'ATK', defense: 'DEF', speed: 'SPE' };
-
-const hpColor = (pct: number) => (pct > 0.5 ? '#4caf50' : pct > 0.25 ? '#ffa726' : '#f44336');
 
 /** Smoothly counts toward a target value (for HP readouts). */
 const useAnimatedNumber = (target: number): number => {
@@ -380,30 +334,28 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const [aiPersonality, setAIPersonality] = useState<AIPersonality>('balanced');
 
     const [engine, setEngine] = useState<EngineState | null>(null);
-    const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [fx, setFx] = useState<SceneFx | null>(null);
-    const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
     const [showSwitchDialog, setShowSwitchDialog] = useState(false);
     const [confirmExit, setConfirmExit] = useState(false);
     const [volumeAnchor, setVolumeAnchor] = useState<HTMLElement | null>(null);
     const [bagAnchor, setBagAnchor] = useState<HTMLElement | null>(null);
+    const [ballAnchor, setBallAnchor] = useState<HTMLElement | null>(null);
     const [randomTeam2, setRandomTeam2] = useState<Team | null>(null);
     const [busy, setBusy] = useState(false);
-
-    const [battleResult, setBattleResult] = useState<{
-        gains: XpGain[];
-        drops: ItemId[];
-        heldDrops: HeldItemId[];
-        streak: number;
-    } | null>(null);
-    const resultsAppliedRef = useRef(false);
 
     // Gauntlet run state: null = quick battle mode
     const [gauntletStage, setGauntletStage] = useState<number | null>(null);
     const gauntletHpRef = useRef<Record<number, number>>({});
 
+    // Safari (wild encounter) state
+    const [safariBiomeId, setSafariBiomeId] = useState<string | null>(null);
+    const [selectedBiomeId, setSelectedBiomeId] = useState<string>(BIOMES[0].id);
+
+    // Battle Tower state
+    const [towerMode, setTowerMode] = useState(false);
+
     // League challenge state
     const [leagueStageId, setLeagueStageId] = useState<string | null>(null);
+    const [leagueRematch, setLeagueRematch] = useState(false);
     const [leagueError, setLeagueError] = useState<string | null>(null);
     const leagueStage = leagueStageId ? getLeagueStage(leagueStageId) ?? null : null;
 
@@ -424,10 +376,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     }, [battleSpeed]);
     const paced = useCallback((ms: number) => ms / battleSpeed, [battleSpeed]);
 
-    // Post-battle offers
-    const [recruitOffer, setRecruitOffer] = useState<RecruitOffer | null>(null);
-    const [evolutionQueue, setEvolutionQueue] = useState<PendingEvolution[]>([]);
-
     // Battle scene backdrop, chosen once per battle
     const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
 
@@ -435,14 +383,47 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const [intro, setIntro] = useState<VsIntroPayload | null>(null);
     const pendingBeginRef = useRef<EngineState | null>(null);
 
-    const battleStatsRef = useRef<Record<string, MonBattleStats>>({});
-
     const [soundVolume, setSoundVolume] = useState(getVolume());
     const [musicOn, setMusicOn] = useState(true);
     const [debugMode, setDebugMode] = useState(false);
 
-    const idCounter = useRef(0);
-    const nextId = useCallback(() => ++idCounter.current, []);
+    // Battle presentation (log, floating text, scene fx, per-battle stats)
+    const {
+        logs,
+        floatingTexts,
+        fx,
+        battleStatsRef,
+        addLog,
+        processEvents,
+        resetEvents,
+    } = useBattleEvents({ hotseat, onEngineState: setEngine });
+
+    // Post-battle consequences (XP, drops, badges, recruits, evolutions)
+    const {
+        battleResult,
+        recruitOffer,
+        setRecruitOffer,
+        evolutionQueue,
+        handleRecruitToTeam,
+        handleRecruitToBox,
+        handleEvolve,
+        handleDeclineEvolve,
+        resetResults,
+    } = useBattleResults({
+        engine,
+        hotseat,
+        gauntletStage,
+        leagueStage,
+        leagueRematch,
+        towerMode,
+        pokemons,
+        profile,
+        updateProfile,
+        battleStatsRef,
+        addLog,
+        onAddPokemonToTeam,
+        onEvolvePokemon,
+    });
 
     // Compact (stacked) battle dock on small screens
     const theme = useTheme();
@@ -464,180 +445,6 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         if (team2Id && team2Id !== RANDOM_ID) localStorage.setItem('battleSimulator_team2', team2Id);
     }, [team2Id]);
 
-    const addLog = useCallback((message: string, type: LogEntry['type'] = 'normal') => {
-        setLogs(prev => [...prev.slice(-60), { id: nextId(), message, type, timestamp: Date.now() }]);
-    }, [nextId]);
-
-    const addFloatingText = useCallback((text: string, color: string, side: TeamId, type: FloatingText['type']) => {
-        const id = nextId();
-        setFloatingTexts(prev => [...prev, { id, text, color, side, type }]);
-        setTimeout(() => setFloatingTexts(prev => prev.filter(t => t.id !== id)), 1600);
-    }, [nextId]);
-
-    const processEvents = useCallback((result: TurnResult) => {
-        const { state, events } = result;
-        const nameOf = (key: string) => capitalize(state.mons[key].pokemon.name);
-        const teamOf = (key: string): TeamId => state.mons[key].team;
-        const sideLabel = (team: TeamId) => (hotseat ? `Player ${team}` : team === 1 ? 'You' : 'Opponent');
-
-        let sceneFx: SceneFx | null = null;
-        let attackerKey: string | null = null;
-        const statFor = (key: string): MonBattleStats => {
-            if (!battleStatsRef.current[key]) {
-                battleStatsRef.current[key] = { dealt: 0, taken: 0, kos: 0 };
-            }
-            return battleStatsRef.current[key];
-        };
-
-        events.forEach(ev => {
-            switch (ev.kind) {
-                case 'move': {
-                    attackerKey = ev.monKey;
-                    addLog(`${nameOf(ev.monKey)} used ${ev.moveName}!`);
-                    playSound('attack');
-                    sceneFx = {
-                        id: nextId(),
-                        attackerTeam: teamOf(ev.monKey),
-                        moveType: ev.moveType,
-                        damageClass: ev.damageClass,
-                        isCritical: false,
-                        isDamaging: false,
-                    };
-                    break;
-                }
-                case 'damage': {
-                    statFor(ev.monKey).taken += ev.amount;
-                    if (attackerKey && teamOf(attackerKey) !== teamOf(ev.monKey)) {
-                        statFor(attackerKey).dealt += ev.amount;
-                    }
-                    if (sceneFx) {
-                        sceneFx.isDamaging = sceneFx.isDamaging || ev.amount > 0;
-                        sceneFx.isCritical = sceneFx.isCritical || ev.isCritical;
-                    }
-                    if (ev.effectiveness === 0) {
-                        addLog(`It doesn't affect ${nameOf(ev.monKey)}...`);
-                        addFloatingText('Immune!', '#9e9e9e', teamOf(ev.monKey), 'effectiveness');
-                        break;
-                    }
-                    addLog(
-                        `${nameOf(ev.monKey)} took ${ev.amount} damage!${ev.isCritical ? ' Critical hit!' : ''}`,
-                        ev.isCritical ? 'critical' : 'normal'
-                    );
-                    addFloatingText(`-${ev.amount}`, ev.isCritical ? '#ff1744' : '#ff5252', teamOf(ev.monKey), 'damage');
-                    if (ev.isCritical) playSound('critical');
-                    if (ev.effectiveness > 1) {
-                        addLog(`It's super effective!`, 'critical');
-                        addFloatingText('Super effective!', '#ffd740', teamOf(ev.monKey), 'effectiveness');
-                    } else if (ev.effectiveness < 1) {
-                        addLog(`It's not very effective...`);
-                    }
-                    break;
-                }
-                case 'miss':
-                    addLog(`${nameOf(ev.monKey)}'s ${ev.moveName} missed!`);
-                    addFloatingText('Miss!', '#90caf9', teamOf(ev.monKey) === 1 ? 2 : 1, 'status');
-                    break;
-                case 'blocked': {
-                    const reasonText = {
-                        paralysis: 'is paralyzed and cannot move!',
-                        sleep: 'is fast asleep...',
-                        freeze: 'is frozen solid!',
-                        confusion: 'is confused and stumbled!',
-                        flinch: 'flinched and couldn’t move!',
-                    }[ev.reason];
-                    addLog(`${nameOf(ev.monKey)} ${reasonText}`);
-                    break;
-                }
-                case 'multiHit':
-                    addLog(`Hit ${ev.hits} times!`, 'critical');
-                    break;
-                case 'statusApplied':
-                    addLog(`${nameOf(ev.monKey)} was afflicted with ${ev.status}!`);
-                    addFloatingText(STATUS_LABELS[ev.status], STATUS_COLORS[ev.status], teamOf(ev.monKey), 'status');
-                    break;
-                case 'statusDamage':
-                    addLog(`${nameOf(ev.monKey)} took ${ev.amount} damage from ${ev.status}!`);
-                    addFloatingText(`-${ev.amount}`, STATUS_COLORS[ev.status], teamOf(ev.monKey), 'damage');
-                    break;
-                case 'statusCured':
-                    addLog(`${nameOf(ev.monKey)} recovered from ${ev.status}!`);
-                    break;
-                case 'heal':
-                    addLog(`${nameOf(ev.monKey)} restored ${ev.amount} HP!`);
-                    addFloatingText(`+${ev.amount}`, '#66bb6a', teamOf(ev.monKey), 'damage');
-                    break;
-                case 'statStage': {
-                    const statName = STAT_ABBR[ev.stat];
-                    const rose = ev.delta > 0;
-                    addLog(
-                        `${nameOf(ev.monKey)}'s ${ev.stat} ${Math.abs(ev.delta) >= 2 ? (rose ? 'rose sharply' : 'fell harshly') : rose ? 'rose' : 'fell'}! (${statName} ${ev.stage > 0 ? '+' : ''}${ev.stage})`
-                    );
-                    addFloatingText(`${statName} ${rose ? '↑' : '↓'}`, rose ? '#ff9800' : '#e53935', teamOf(ev.monKey), 'status');
-                    break;
-                }
-                case 'confusionHit':
-                    addLog(`${nameOf(ev.monKey)} hurt itself in confusion! (-${ev.amount} HP)`, 'critical');
-                    addFloatingText(`-${ev.amount}`, STATUS_COLORS.confusion, teamOf(ev.monKey), 'damage');
-                    break;
-                case 'weatherChanged':
-                    addLog(ev.weather === 'none' ? 'The weather returned to normal.' : `The weather changed to ${WEATHER_LABELS[ev.weather]}!`);
-                    break;
-                case 'weatherDamage':
-                    addLog(`${nameOf(ev.monKey)} is buffeted by the ${WEATHER_LABELS[ev.weather].toLowerCase()}! (-${ev.amount} HP)`);
-                    break;
-                case 'terrainChanged':
-                    addLog(ev.terrain === 'none' ? 'The terrain returned to normal.' : `The battlefield became ${ev.terrain} terrain!`);
-                    break;
-                case 'combo':
-                    addLog(`${nameOf(ev.monKey)} followed up with ${ev.moveName}!`, 'critical');
-                    break;
-                case 'abilityActivated':
-                    addLog(`${nameOf(ev.monKey)}'s ${ev.abilityName} activated!`, 'critical');
-                    addFloatingText(ev.abilityName, '#ab47bc', teamOf(ev.monKey), 'status');
-                    break;
-                case 'faint':
-                    if (attackerKey && teamOf(attackerKey) !== teamOf(ev.monKey)) {
-                        statFor(attackerKey).kos += 1;
-                    }
-                    if (sceneFx) sceneFx.faintedTeam = teamOf(ev.monKey);
-                    addLog(`${nameOf(ev.monKey)} fainted!`, 'death');
-                    playSound('faint');
-                    break;
-                case 'switch':
-                    addLog(`${sideLabel(teamOf(ev.monKey))} sent out ${nameOf(ev.monKey)}!`);
-                    playSound('switch');
-                    break;
-                case 'noEnergy':
-                    addLog(`${nameOf(ev.monKey)} doesn't have enough energy for ${ev.moveName}!`);
-                    break;
-                case 'itemUsed':
-                    addLog(`${sideLabel(ev.team)} used a ${ev.itemName} on ${nameOf(ev.monKey)}!`, 'critical');
-                    addFloatingText(ev.itemName, '#4fc3f7', ev.team, 'status');
-                    playSound('switch');
-                    break;
-                case 'heldItem':
-                    addLog(`${nameOf(ev.monKey)}'s ${ev.itemName} activated!`, 'critical');
-                    addFloatingText(ev.itemName, '#ffd54f', teamOf(ev.monKey), 'status');
-                    break;
-                case 'pass':
-                    addLog(`${sideLabel(ev.team)} passed the turn.`);
-                    break;
-                case 'gameOver':
-                    addLog(
-                        hotseat
-                            ? `Player ${ev.winner} won the battle!`
-                            : ev.winner === 1 ? 'You won the battle!' : 'You lost the battle!',
-                        'victory'
-                    );
-                    playSound('victory');
-                    stopMusic();
-                    break;
-            }
-        });
-
-        if (sceneFx) setFx(sceneFx);
-        setEngine(state);
-    }, [addFloatingText, addLog, hotseat, nextId]);
 
     const runPlayerAction = useCallback((action: BattleAction) => {
         if (!engine || engine.phase !== 'selecting' || busy) return;
@@ -668,176 +475,14 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         return () => clearTimeout(timer);
     }, [engine, hotseat, intro, paced, processEvents, typeEffectiveness]);
 
-    // Battle results: XP, records, item drops — applied exactly once per battle
-    useEffect(() => {
-        if (!engine || engine.phase !== 'gameOver' || engine.winner === null || resultsAppliedRef.current) return;
-        resultsAppliedRef.current = true;
-
-        // Hotseat battles are friendly matches: no XP, records, drops or
-        // recruitment (also prevents farming a second local player).
-        if (hotseat) return;
-
-        const won = engine.winner === 1;
-        const stats = battleStatsRef.current;
-        const entries = engine.order[1].map(key => {
-            const mon = engine.mons[key];
-            return { pokemonId: mon.pokemon.id, kos: stats[key]?.kos ?? 0, survived: mon.currentHp > 0 };
-        });
-
-        const inGauntlet = gauntletStage !== null;
-        const inLeague = leagueStage !== null;
-        let records = updateRecords(profile.records, won);
-        if (inGauntlet && won) {
-            records = { ...records, gauntletBestStage: Math.max(records.gauntletBestStage, gauntletStage) };
-        }
-        const xpMultiplier = inLeague ? LEAGUE_XP_MULTIPLIER : inGauntlet ? GAUNTLET_XP_MULTIPLIER : 1;
-        const { profile: withXp, gains } = applyBattleXp(profile, entries, won, records.currentStreak, xpMultiplier);
-        const isBoss = inLeague || (inGauntlet && isBossStage(gauntletStage));
-        const drops = won ? rollBattleRewards(records.currentStreak, isBoss, Math.random) : [];
-        const heldDrop = won ? rollHeldItemDrop(records.currentStreak, isBoss, Math.random) : null;
-        const heldDrops = heldDrop ? [heldDrop] : [];
-        // The battle inventory started from the profile, so what's left in the
-        // engine (plus drops) IS the player's new stock.
-        const items = addItems({ ...engine.items[1] }, drops);
-        const heldItems = addHeldItems(profile.heldItems, heldDrops);
-
-        // League progress: badges/defeats persist forever (idempotent append)
-        const league = inLeague && won && !withXp.league.defeated.includes(leagueStage.id)
-            ? {
-                defeated: [...withXp.league.defeated, leagueStage.id],
-                champion: withXp.league.champion || leagueStage.kind === 'champion',
-            }
-            : withXp.league;
-        if (inLeague && won && leagueStage.badge) playChime('recruit'); // badge fanfare
-
-        updateProfile(() => ({ ...withXp, records, items, heldItems, league }));
-        setBattleResult({ gains, drops, heldDrops, streak: records.currentStreak });
-
-        // Recruitment offer (guaranteed after gauntlet bosses and E4/champion wins)
-        if (won) {
-            const teamMons = engine.order[1].map(key => engine.mons[key]);
-            const avgLevel = Math.round(teamMons.reduce((a, m) => a + m.level, 0) / teamMons.length);
-            const guaranteed = (inGauntlet && isBoss) || (inLeague && leagueStage.kind !== 'gym');
-            setRecruitOffer(
-                rollRecruit(pokemons, avgLevel, records.currentStreak, Math.random, { guaranteed })
-            );
-        }
-
-        // Evolution offers for mons that just leveled past their threshold
-        const leveled = gains.filter(g => g.toLevel > g.fromLevel);
-        leveled.forEach(async gain => {
-            const target = await getEvolutionTarget(gain.pokemonId);
-            if (!target || gain.toLevel < target.minLevel) return;
-            const progress = withXp.mons[gain.pokemonId];
-            if (progress?.declinedEvolveAt === gain.toLevel) return;
-            const mon = engine.order[1].map(key => engine.mons[key]).find(m => m.pokemon.id === gain.pokemonId);
-            if (!mon) return;
-            setEvolutionQueue(prev =>
-                prev.some(e => e.fromId === gain.pokemonId)
-                    ? prev
-                    : [...prev, {
-                        fromId: gain.pokemonId,
-                        fromName: mon.pokemon.name,
-                        fromImage: mon.pokemon.image,
-                        toId: target.id,
-                        toName: target.name,
-                        level: gain.toLevel,
-                    }]
-            );
-        });
-
-        // New-move hints (log-line only; fire-and-forget)
-        leveled.forEach(gain => {
-            const mon = engine.order[1].map(key => engine.mons[key]).find(m => m.pokemon.id === gain.pokemonId);
-            if (!mon) return;
-            getFullLearnset(mon.pokemon)
-                .then(entries => {
-                    const learnable = entries.find(e => e.level > gain.fromLevel && e.level <= gain.toLevel);
-                    if (learnable) {
-                        addLog(`${capitalize(mon.pokemon.name)} can learn ${learnable.move.name} — manage moves in the Team Builder!`);
-                    }
-                })
-                .catch(() => undefined); // hint is best-effort
-        });
-    }, [addLog, engine, gauntletStage, leagueStage, hotseat, pokemons, profile, updateProfile]);
-
-    const registerRecruit = useCallback((offer: RecruitOffer) => {
-        updateProfile(prev => registerMonProgress(prev, {
-            id: offer.pokemon.id,
-            level: offer.level,
-            shiny: offer.shiny,
-            elite: offer.elite,
-        }));
-    }, [updateProfile]);
-
-    const handleRecruitToTeam = (teamId: string) => {
-        if (!recruitOffer) return;
-        registerRecruit(recruitOffer);
-        onAddPokemonToTeam(teamId, recruitOffer.pokemon);
-        playChime('recruit');
-        setRecruitOffer(null);
-    };
-
-    const handleRecruitToBox = () => {
-        if (!recruitOffer) return;
-        registerRecruit(recruitOffer);
-        const offer = recruitOffer;
-        updateProfile(prev => ({
-            ...prev,
-            box: [...prev.box, { pokemon: offer.pokemon, level: offer.level, shiny: offer.shiny, elite: offer.elite }],
-        }));
-        playChime('recruit');
-        setRecruitOffer(null);
-    };
-
-    const handleEvolve = async () => {
-        const evo = evolutionQueue[0];
-        if (!evo) return;
-        try {
-            const newPokemon = await fetchPokemonById(evo.toId);
-            updateProfile(prev => {
-                const mons = { ...prev.mons };
-                const old = mons[evo.fromId] ?? { xp: 0, level: evo.level };
-                delete mons[evo.fromId];
-                mons[evo.toId] = { xp: old.xp, level: old.level, shiny: old.shiny, elite: old.elite, heldItem: old.heldItem };
-                return { ...prev, mons };
-            });
-            onEvolvePokemon(evo.fromId, newPokemon);
-            playChime('evolve');
-            addLog(`${capitalize(evo.fromName)} evolved into ${capitalize(newPokemon.name)}!`, 'victory');
-            // Let the reveal animation play before showing the next offer
-            setTimeout(() => setEvolutionQueue(prev => prev.filter(e => e.fromId !== evo.fromId)), 1500);
-        } catch {
-            addLog('The evolution failed — try again after the next battle.', 'normal');
-            setEvolutionQueue(prev => prev.filter(e => e.fromId !== evo.fromId));
-        }
-    };
-
-    const handleDeclineEvolve = () => {
-        const evo = evolutionQueue[0];
-        if (!evo) return;
-        updateProfile(prev => {
-            const existing = prev.mons[evo.fromId];
-            if (!existing) return prev;
-            return { ...prev, mons: { ...prev.mons, [evo.fromId]: { ...existing, declinedEvolveAt: existing.level } } };
-        });
-        setEvolutionQueue(prev => prev.filter(e => e.fromId !== evo.fromId));
-    };
-
     const playerAvgLevel = (t1: Team): number => {
         const levels = t1.pokemon.map(p => getMonProgress(profile, p.id).level);
         return Math.round(levels.reduce((a, b) => a + b, 0) / levels.length);
     };
 
     const launchBattle = (state: EngineState, openingLog: string, introPayload: VsIntroPayload) => {
-        battleStatsRef.current = {};
-        resultsAppliedRef.current = false;
-        setBattleResult(null);
-        setRecruitOffer(null);
-        setEvolutionQueue([]);
-        setLogs([]);
-        setFloatingTexts([]);
-        setFx(null);
+        resetEvents();
+        resetResults();
         setBusy(true); // locked until the VS intro dismisses
         playSound('battleStart');
         if (musicOn) playMusic('battleTheme');
@@ -854,7 +499,12 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         setIntro(null);
         const pending = pendingBeginRef.current;
         pendingBeginRef.current = null;
-        if (pending) processEvents(beginBattle(pending));
+        if (pending) {
+            // Both leads call out as they materialize
+            playCry(getActiveMon(pending, 1).pokemon.id, 0.8);
+            setTimeout(() => playCry(getActiveMon(pending, 2).pokemon.id, 0.8), 650);
+            processEvents(beginBattle(pending));
+        }
         setTimeout(() => setBusy(false), paced(400));
     }, [paced, processEvents]);
 
@@ -911,6 +561,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
 
             setGauntletStage(null);
             setLeagueStageId(null);
+            setSafariBiomeId(null);
+            setTowerMode(false);
             gauntletHpRef.current = {};
             setBackdropUrl(backgroundUrl(pickBattleBackgroundId({ rng: Math.random })));
             // Hotseat gives both sides the stock inventory (profile items stay untouched)
@@ -969,6 +621,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setOpponentKind('ai'); // gauntlet is always vs AI
             setGauntletStage(stageIndex);
             setLeagueStageId(null);
+            setSafariBiomeId(null);
+            setTowerMode(false);
             setBackdropUrl(backgroundUrl(pickBattleBackgroundId({ isBoss: stage.isBoss, rng: Math.random })));
             const state = createEngineState(team1, team2, { 1: { ...profile.items }, 2: createInventory() });
             launchBattle(state, `Gauntlet stage ${stageIndex}${stage.isBoss ? ' — BOSS BATTLE!' : ''}`, {
@@ -988,7 +642,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         startGauntletStage(1);
     };
 
-    const startLeagueStage = async (stage: LeagueStage) => {
+    const startLeagueStage = async (stage: LeagueStage, rematch = false) => {
         if (starting) return;
         const t1 = teams.find(t => t.id === team1Id);
         if (!t1 || t1.pokemon.length === 0) return;
@@ -998,7 +652,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         try {
             const roster = await fetchLeagueTeam(stage);
             const movesets = await fetchMovesets([...t1.pokemon, ...roster]);
-            const stageLevel = leagueStageLevel(stage, playerAvgLevel(t1));
+            const stageLevel = Math.min(100, leagueStageLevel(stage, playerAvgLevel(t1)) + (rematch ? REMATCH_LEVEL_BONUS : 0));
 
             const team1 = t1.pokemon.map((p, i) => {
                 const progress = getMonProgress(profile, p.id);
@@ -1023,13 +677,16 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setGauntletStage(null);
             gauntletHpRef.current = {};
             setLeagueStageId(stage.id);
+            setLeagueRematch(rematch);
+            setSafariBiomeId(null);
+            setTowerMode(false);
             setBackdropUrl(backgroundUrl(stage.backdropId));
             const state = createEngineState(team1, team2, { 1: { ...profile.items }, 2: createInventory() });
-            launchBattle(state, `${stage.title} ${stage.name} challenges you!`, {
+            launchBattle(state, rematch ? `Round 2! ${stage.title} ${stage.name} wants revenge!` : `${stage.title} ${stage.name} challenges you!`, {
                 leftLabel: t1.name,
                 leftSprites: t1.pokemon.map(p => getBattleSprites(p.id).artwork),
                 rightLabel: stage.name,
-                rightSubLabel: stage.title,
+                rightSubLabel: rematch ? `${stage.title} — Round 2` : stage.title,
                 rightPortrait: trainerPortraitUrl(stage.portrait),
                 rightKind: 'trainer',
             });
@@ -1043,6 +700,118 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const handleLeagueContinue = () => {
         const next = nextLeagueStage(profile.league.defeated);
         if (next) void startLeagueStage(next);
+    };
+
+    const startTowerBattle = async () => {
+        if (starting) return;
+        const t1 = teams.find(t => t.id === team1Id);
+        if (!t1 || t1.pokemon.length === 0 || pokemons.length === 0) return;
+        const battleNumber = profile.records.towerStreak + 1;
+        const opponents = pickTowerOpponents(pokemons, battleNumber, Math.random);
+        if (opponents.length === 0) return;
+
+        setStarting(true);
+        try {
+            const picks = t1.pokemon.slice(0, TOWER_TEAM_SIZE);
+            const movesets = await fetchMovesets([...picks, ...opponents.map(o => o.pokemon)]);
+
+            // Tower rules: everyone at level 50, no held items, no elite mods
+            const team1 = picks.map((p, i) => {
+                const progress = getMonProgress(profile, p.id);
+                return createBattleMon(p, 1, i, TOWER_LEVEL, getAbilityForTypes(p.types), {
+                    shiny: progress.shiny, // cosmetic only
+                    moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                });
+            });
+            const team2 = opponents.map((o, i) =>
+                createBattleMon(o.pokemon, 2, i, TOWER_LEVEL, getAbilityForTypes(o.pokemon.types), {
+                    statMod: recruitStatMod(o.elite),
+                    shiny: o.elite,
+                    moves: movesets.get(o.pokemon.id),
+                })
+            );
+
+            setOpponentKind('ai');
+            setAIDifficulty('expert');
+            setAIPersonality((['aggressive', 'defensive', 'balanced'] as const)[Math.floor(Math.random() * 3)]);
+            setGauntletStage(null);
+            setLeagueStageId(null);
+            setSafariBiomeId(null);
+            setTowerMode(true);
+            gauntletHpRef.current = {};
+            setBackdropUrl(backgroundUrl('skypillar'));
+            // Fixed loadout each battle — the tower never touches your bag
+            const state = createEngineState(team1, team2, { 1: createInventory(), 2: createInventory() });
+            const boss = isTowerBossBattle(battleNumber);
+            launchBattle(state, `Battle Tower — battle #${battleNumber}${boss ? ' — BOSS BATTLE!' : ''}`, {
+                leftLabel: t1.name,
+                leftSprites: picks.map(p => getBattleSprites(p.id).artwork),
+                rightLabel: 'Battle Tower',
+                rightSubLabel: `Battle #${battleNumber}${boss ? ' — BOSS' : ''} · everyone at Lv ${TOWER_LEVEL}`,
+                rightKind: 'ai',
+            });
+        } finally {
+            setStarting(false);
+        }
+    };
+
+    const startSafariEncounter = async (biome: Biome) => {
+        if (starting) return;
+        const t1 = teams.find(t => t.id === team1Id);
+        if (!t1 || t1.pokemon.length === 0 || pokemons.length === 0) return;
+
+        const encounter = rollWildEncounter(pokemons, biome, playerAvgLevel(t1), Math.random);
+        if (!encounter) {
+            addLog('No wild Pokémon found in this biome yet — load more of the Pokédex first.');
+            return;
+        }
+
+        setStarting(true);
+        try {
+            const movesets = await fetchMovesets([...t1.pokemon, encounter.pokemon]);
+
+            const team1 = t1.pokemon.map((p, i) => {
+                const progress = getMonProgress(profile, p.id);
+                return createBattleMon(p, 1, i, progress.level, getAbilityForTypes(p.types), {
+                    shiny: progress.shiny,
+                    statMod: recruitStatMod(progress.elite),
+                    heldItem: progress.heldItem,
+                    moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                });
+            });
+            const wildMon = createBattleMon(
+                encounter.pokemon, 2, 0, encounter.level, getAbilityForTypes(encounter.pokemon.types),
+                { shiny: encounter.shiny, moves: movesets.get(encounter.pokemon.id) }
+            );
+
+            setOpponentKind('ai');
+            setAIDifficulty('beginner');
+            setAIPersonality('balanced');
+            setGauntletStage(null);
+            setLeagueStageId(null);
+            setSafariBiomeId(biome.id);
+            setTowerMode(false);
+            gauntletHpRef.current = {};
+            const backdropId = biome.backdrops[Math.floor(Math.random() * biome.backdrops.length)];
+            setBackdropUrl(backgroundUrl(backdropId));
+            const state = createEngineState(
+                team1,
+                [wildMon],
+                { 1: { ...profile.items }, 2: createInventory() },
+                { wild: true, balls: { ...profile.balls } }
+            );
+            const rarityTag = encounter.rarity !== 'common' ? ` (${encounter.rarity}${encounter.shiny ? ', shiny!' : ''})` : '';
+            launchBattle(state, `A wild ${capitalize(encounter.pokemon.name)} appeared${rarityTag}!`, {
+                leftLabel: t1.name,
+                leftSprites: t1.pokemon.map(p => getBattleSprites(p.id).artwork),
+                rightLabel: `Wild ${capitalize(encounter.pokemon.name)}`,
+                rightSubLabel: `${biome.emoji} ${biome.name}`,
+                rightPortrait: getBattleSprites(encounter.pokemon.id, encounter.shiny).artwork,
+                rightKind: 'trainer',
+            });
+        } finally {
+            setStarting(false);
+        }
     };
 
     const handleGauntletContinue = () => {
@@ -1066,6 +835,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         gauntletHpRef.current = {};
         setLeagueStageId(null);
         setLeagueError(null);
+        setSafariBiomeId(null);
+        setTowerMode(false);
+        setLeagueRematch(false);
         setBackdropUrl(null);
         setIntro(null);
         pendingBeginRef.current = null;
@@ -1187,8 +959,85 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     starting={starting}
                     disabled={!team1Id}
                     error={leagueError}
-                    onChallenge={stage => void startLeagueStage(stage)}
+                    onChallenge={(stage, rematch) => void startLeagueStage(stage, rematch)}
                 />
+                <Paper sx={{ p: 2.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                        <Typography sx={{ fontSize: 32 }}>🧭</Typography>
+                        <Box sx={{ flexGrow: 1, minWidth: 240 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#81c784' }}>
+                                Safari Expedition
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Explore a biome, battle a wild Pokémon, weaken it and throw
+                                Poké Balls to catch it. Rare and shiny encounters await.
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 0.75 }}>
+                            {BALL_IDS.map(id => (
+                                <Chip
+                                    key={id}
+                                    label={`${BALLS[id].name} ×${profile.balls[id] ?? 0}`}
+                                    size="small"
+                                    sx={{ fontWeight: 700 }}
+                                />
+                            ))}
+                        </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1.5, mt: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <FormControl size="small" sx={{ minWidth: 220 }}>
+                            <InputLabel>Biome</InputLabel>
+                            <Select value={selectedBiomeId} label="Biome" onChange={e => setSelectedBiomeId(e.target.value)}>
+                                {BIOMES.map(b => (
+                                    <MenuItem key={b.id} value={b.id}>
+                                        {b.emoji} {b.name} — {b.types.join(', ')}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <Button
+                            variant="contained"
+                            color="success"
+                            disabled={starting || !team1Id || pokemons.length === 0}
+                            onClick={() => {
+                                const biome = getBiome(selectedBiomeId);
+                                if (biome) void startSafariEncounter(biome);
+                            }}
+                        >
+                            {starting ? 'Preparing…' : 'Explore'}
+                        </Button>
+                    </Box>
+                </Paper>
+                <Paper sx={{ p: 2.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                        <Typography sx={{ fontSize: 32 }}>🗼</Typography>
+                        <Box sx={{ flexGrow: 1, minWidth: 240 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#90caf9' }}>
+                                Battle Tower
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                A pure-skill streak ladder: everyone fights at Lv {TOWER_LEVEL}, no held
+                                items, expert AI. Every 7th battle is a boss. How far can you climb?
+                            </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" sx={{ fontWeight: 800, color: '#90caf9' }}>
+                                {profile.records.towerStreak}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                streak · best {profile.records.towerBestStreak}
+                            </Typography>
+                        </Box>
+                        <Button
+                            variant="contained"
+                            sx={{ bgcolor: '#90caf9', color: '#1a1a2e', fontWeight: 700, '&:hover': { bgcolor: '#64b5f6' } }}
+                            disabled={starting || !team1Id || pokemons.length === 0}
+                            onClick={() => void startTowerBattle()}
+                        >
+                            {starting ? 'Preparing…' : `Battle #${profile.records.towerStreak + 1}`}
+                        </Button>
+                    </Box>
+                </Paper>
             </BattleSetup>
         );
     }
@@ -1421,7 +1270,53 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                             >
                                 Bag
                             </Button>
+                            {engine.wild && (
+                                <Button
+                                    variant="contained"
+                                    size="small"
+                                    color="error"
+                                    disabled={!playerTurn || !BALL_IDS.some(id => (engine.balls[id] ?? 0) > 0)}
+                                    onClick={e => setBallAnchor(e.currentTarget)}
+                                    sx={{ flexGrow: 1, fontWeight: 700 }}
+                                >
+                                    ⚪ Ball
+                                </Button>
+                            )}
                         </Box>
+                        <Popover
+                            open={Boolean(ballAnchor)}
+                            anchorEl={ballAnchor}
+                            onClose={() => setBallAnchor(null)}
+                            anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                            transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                        >
+                            <Stack spacing={1} sx={{ p: 1.5, width: 260 }}>
+                                {BALL_IDS.map(id => {
+                                    const count = engine.balls[id] ?? 0;
+                                    return (
+                                        <Button
+                                            key={id}
+                                            variant="outlined"
+                                            size="small"
+                                            disabled={!playerTurn || count <= 0}
+                                            onClick={() => {
+                                                setBallAnchor(null);
+                                                runPlayerAction({ kind: 'throwBall', ballId: id });
+                                            }}
+                                            sx={{ justifyContent: 'flex-start', textAlign: 'left', gap: 1 }}
+                                        >
+                                            <Box sx={{ flexGrow: 1 }}>
+                                                <Typography variant="subtitle2">{BALLS[id].name}</Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {BALLS[id].description}
+                                                </Typography>
+                                            </Box>
+                                            <Chip label={`x${count}`} size="small" sx={{ height: 20, fontSize: '0.65rem' }} />
+                                        </Button>
+                                    );
+                                })}
+                            </Stack>
+                        </Popover>
                         <Popover
                             open={Boolean(bagAnchor)}
                             anchorEl={bagAnchor}
@@ -1485,10 +1380,20 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         stageLabel={
                             hotseat
                                 ? `Player ${engine.winner} wins!`
-                                : leagueStage
+                                : towerMode
+                                    ? engine.winner === 1
+                                        ? `🗼 Tower win #${profile.records.towerStreak}!`
+                                        : `Tower run over — best streak ${profile.records.towerBestStreak}`
+                                : engine.wild
+                                    ? engine.caught
+                                        ? `Gotcha! ${(() => { const m = engine.mons[engine.caught]; return m ? capitalize(m.pokemon.name) : 'It'; })()} was caught!`
+                                        : engine.winner === 1
+                                            ? 'The wild Pokémon fainted...'
+                                            : 'Your team was defeated...'
+                                    : leagueStage
                                     ? engine.winner === 1
                                         ? leagueStage.badge
-                                            ? `${leagueStage.badge.emoji} ${leagueStage.badge.name} earned!`
+                                            ? `${leagueStage.badge.emoji} ${leagueStage.badge.name}${leagueRematch ? ' — Round 2 won!' : ' earned!'}`
                                             : leagueStage.kind === 'champion'
                                                 ? '🏆 You are the Champion!'
                                                 : `Elite Four ${leagueStage.name} defeated!`
@@ -1500,26 +1405,49 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                         : undefined
                         }
                         onContinue={
-                            leagueStage && engine.winner === 1 && nextLeagueStage(profile.league.defeated)
-                                ? handleLeagueContinue
-                                : gauntletStage !== null && engine.winner === 1
-                                    ? handleGauntletContinue
-                                    : undefined
+                            towerMode && engine.winner === 1
+                                ? () => void startTowerBattle()
+                                : leagueStage && engine.winner === 1 && !leagueRematch && nextLeagueStage(profile.league.defeated)
+                                    ? handleLeagueContinue
+                                    : gauntletStage !== null && engine.winner === 1
+                                        ? handleGauntletContinue
+                                        : undefined
                         }
                         onRematch={
-                            leagueStage
+                            towerMode
                                 ? engine.winner === 1
                                     ? undefined
-                                    : () => void startLeagueStage(leagueStage)
-                                : gauntletStage === null
-                                    ? handleStartBattle
-                                    : engine.winner === 1
+                                    : () => void startTowerBattle()
+                                : safariBiomeId
+                                ? () => { const b = getBiome(safariBiomeId); if (b) void startSafariEncounter(b); }
+                                : leagueStage
+                                    ? engine.winner === 1
                                         ? undefined
-                                        : handleStartGauntlet
+                                        : () => void startLeagueStage(leagueStage, leagueRematch)
+                                    : gauntletStage === null
+                                        ? handleStartBattle
+                                        : engine.winner === 1
+                                            ? undefined
+                                            : handleStartGauntlet
                         }
-                        rematchLabel={leagueStage ? 'Retry' : gauntletStage !== null ? 'New Run' : 'Rematch'}
+                        rematchLabel={towerMode ? 'New Run' : safariBiomeId ? 'Explore Again' : leagueStage ? 'Retry' : gauntletStage !== null ? 'New Run' : 'Rematch'}
                         onExit={handleCloseBattle}
                     >
+                        {(battleResult?.achievements?.length ?? 0) > 0 && (
+                            <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                {battleResult!.achievements.map(id => {
+                                    const a = getAchievement(id);
+                                    return a ? (
+                                        <Chip
+                                            key={id}
+                                            label={`${a.emoji} ${a.name}`}
+                                            size="small"
+                                            sx={{ bgcolor: 'rgba(255, 215, 0, 0.18)', color: '#ffd700', fontWeight: 700 }}
+                                        />
+                                    ) : null;
+                                })}
+                            </Box>
+                        )}
                         {recruitOffer && engine.winner === 1 && (
                             <RecruitOfferCard
                                 offer={recruitOffer}
