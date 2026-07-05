@@ -216,6 +216,13 @@ const JourneyMap: React.FC<JourneyMapProps> = ({
                                                         🌿 Wild encounter — {biome.emoji} {biome.name}
                                                     </Button>
                                                 )}
+                                                {!cleared && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {trainerNext || gymNext
+                                                            ? `Defeat ${node.trainers.length > 0 ? 'all trainers' : ''}${node.trainers.length > 0 && node.gymIds.length > 0 ? ' and ' : ''}${node.gymIds.length > 0 ? 'the gym' : ''} here to unlock travel — wild encounters are optional (great for catching!).`
+                                                            : ''}
+                                                    </Typography>
+                                                )}
                                                 {cleared && nextNode && (
                                                     <Button
                                                         variant="contained"

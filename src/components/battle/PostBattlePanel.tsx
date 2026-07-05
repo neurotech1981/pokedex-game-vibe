@@ -32,6 +32,7 @@ interface PostBattlePanelProps {
     onExit: () => void;
     /** Gauntlet: advance to the next stage (only shown on victory). */
     onContinue?: () => void;
+    continueLabel?: string;
     /** Gauntlet: e.g. "Stage 4 cleared!" */
     stageLabel?: string;
     /** Extra content (recruit offers, evolution prompts). */
@@ -53,6 +54,7 @@ const PostBattlePanel: React.FC<PostBattlePanelProps> = ({
     rematchLabel = 'Rematch',
     onExit,
     onContinue,
+    continueLabel = 'Next Battle',
     stageLabel,
     children,
 }) => {
@@ -222,7 +224,7 @@ const PostBattlePanel: React.FC<PostBattlePanelProps> = ({
                     <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', mt: 0.5 }}>
                         {won && onContinue && (
                             <Button variant="contained" color="success" size="small" onClick={onContinue}>
-                                Next Battle
+                                {continueLabel}
                             </Button>
                         )}
                         {onRematch && (

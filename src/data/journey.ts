@@ -254,5 +254,16 @@ export const nextGymIdAt = (node: JourneyNode, league: LeagueProgress): string |
 export const journeyBattleLevel = (node: JourneyNode, playerAvgLevel: number): number =>
     Math.min(100, Math.max(node.levelFloor, playerAvgLevel - 2));
 
+/** Locate a trainer (and its node) by trainer id — for post-battle context. */
+export const findJourneyTrainer = (
+    trainerId: string
+): { node: JourneyNode; trainer: JourneyTrainer } | null => {
+    for (const node of JOURNEY_NODES) {
+        const trainer = node.trainers.find(t => t.id === trainerId);
+        if (trainer) return { node, trainer };
+    }
+    return null;
+};
+
 export const journeyNodeIndex = (id: string): number =>
     JOURNEY_NODES.findIndex(n => n.id === id);

@@ -87,7 +87,7 @@ import type { Biome } from '../utils/safari';
 import { BIOMES, getBiome, rollWildEncounter } from '../utils/safari';
 import { getAchievement } from '../utils/achievements';
 import type { JourneyNode, JourneyTrainer } from '../data/journey';
-import { JOURNEY_NODES, isNodeComplete, journeyBattleLevel, getJourneyNode } from '../data/journey';
+import { JOURNEY_NODES, findJourneyTrainer, isNodeComplete, journeyBattleLevel, getJourneyNode } from '../data/journey';
 import JourneyMap from './battle/JourneyMap';
 import { fetchPokemonById } from '../utils/evolution';
 import { TOWER_LEVEL, TOWER_TEAM_SIZE, isTowerBossBattle, pickTowerOpponents } from '../utils/tower';
@@ -1611,6 +1611,18 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         stageLabel={
                             hotseat
                                 ? `Player ${engine.winner} wins!`
+                                : journeyTrainerId
+                                    ? (() => {
+                                        const found = findJourneyTrainer(journeyTrainerId);
+                                        if (!found) return undefined;
+                                        const beaten = found.node.trainers.filter(t =>
+                                            profile.journey.clearedTrainers.includes(t.id)).length;
+                                        return engine.winner === 1
+                                            ? `⚔️ ${found.trainer.title} ${found.trainer.name} defeated! (${beaten}/${found.node.trainers.length} trainers on ${found.node.name})`
+                                            : `Defeated by ${found.trainer.title} ${found.trainer.name}...`;
+                                    })()
+                                : engine.wild && journeyOpen && !engine.caught && engine.winner === 1
+                                    ? 'The wild Pokémon fainted — catches and XP are yours, but only trainer battles clear the route!'
                                 : towerMode
                                     ? engine.winner === 1
                                         ? `🗼 Tower win #${profile.records.towerStreak}!`
@@ -1636,16 +1648,24 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                         : undefined
                         }
                         onContinue={
-                            towerMode && engine.winner === 1
-                                ? () => void startTowerBattle()
-                                : leagueStage && engine.winner === 1 && !leagueRematch && nextLeagueStage(profile.league.defeated)
-                                    ? handleLeagueContinue
-                                    : gauntletStage !== null && engine.winner === 1
-                                        ? handleGauntletContinue
-                                        : undefined
+                            (journeyTrainerId || (engine.wild && journeyOpen)) && engine.winner === 1
+                                ? handleCloseBattle
+                                : towerMode && engine.winner === 1
+                                    ? () => void startTowerBattle()
+                                    : leagueStage && engine.winner === 1 && !leagueRematch && nextLeagueStage(profile.league.defeated)
+                                        ? handleLeagueContinue
+                                        : gauntletStage !== null && engine.winner === 1
+                                            ? handleGauntletContinue
+                                            : undefined
                         }
+                        continueLabel={journeyTrainerId || (engine.wild && journeyOpen) ? '🗺️ Back to Map' : 'Next Battle'}
                         onRematch={
-                            towerMode
+                            journeyTrainerId
+                                ? () => {
+                                    const found = findJourneyTrainer(journeyTrainerId);
+                                    if (found) void startJourneyTrainerBattle(found.node, found.trainer);
+                                }
+                                : towerMode
                                 ? engine.winner === 1
                                     ? undefined
                                     : () => void startTowerBattle()
@@ -1661,7 +1681,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                             ? undefined
                                             : handleStartGauntlet
                         }
-                        rematchLabel={towerMode ? 'New Run' : safariBiomeId ? 'Explore Again' : leagueStage ? 'Retry' : gauntletStage !== null ? 'New Run' : 'Rematch'}
+                        rematchLabel={journeyTrainerId ? 'Rematch' : towerMode ? 'New Run' : safariBiomeId ? 'Explore Again' : leagueStage ? 'Retry' : gauntletStage !== null ? 'New Run' : 'Rematch'}
                         onExit={handleCloseBattle}
                     >
                         {(battleResult?.achievements?.length ?? 0) > 0 && (
