@@ -713,12 +713,12 @@ const Pokemon: React.FC = () => {
                     top: '50%',
                     left: '50%',
                     transform: 'translate(-50%, -50%)',
-                    width: { xs: '90%', sm: '80%', md: '70%' },
-                    maxHeight: '90vh',
+                    width: { xs: '94%', sm: '80%', md: '70%' },
+                    maxHeight: { xs: '94vh', sm: '90vh' },
                     bgcolor: 'background.paper',
                     borderRadius: '20px',
                     boxShadow: 24,
-                    p: 4,
+                    p: { xs: 2, sm: 4 },
                     overflow: 'auto',
                 }}
             >
@@ -747,14 +747,14 @@ const Pokemon: React.FC = () => {
 
                 {activeTab === 0 && (
                     <Box>
-                        <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
+                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'center', sm: 'flex-start' }, gap: 3, mb: 3 }}>
                             <CardMedia
                                 component="img"
                                 image={selectedPokemon.image}
                                 alt={selectedPokemon.name}
                                 sx={{
-                                    width: 200,
-                                    height: 200,
+                                    width: { xs: 160, sm: 200 },
+                                    height: { xs: 160, sm: 200 },
                                     objectFit: 'contain',
                                     background: 'linear-gradient(180deg, rgba(74, 144, 226, 0.1) 0%, rgba(155, 89, 182, 0.1) 100%)',
                                     borderRadius: '10px',
@@ -1450,6 +1450,11 @@ const Pokemon: React.FC = () => {
                     typeEffectiveness={TYPE_EFFECTIVENESS}
                     onAddPokemonToTeam={handleAddPokemonToTeam}
                     onEvolvePokemon={handleEvolvePokemon}
+                    onCreateTeam={(id, name, pokemon) => {
+                        setTeams(prev => prev.some(t => t.id === id)
+                            ? prev.map(t => (t.id === id ? { ...t, name, pokemon } : t))
+                            : [...prev, { id, name, pokemon }]);
+                    }}
                     profile={profile}
                     updateProfile={updateProfile}
                 />

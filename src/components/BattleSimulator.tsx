@@ -24,6 +24,8 @@ import {
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Avatar from '@mui/material/Avatar';
+import Drawer from '@mui/material/Drawer';
+import ArticleIcon from '@mui/icons-material/Article';
 import CloseIcon from '@mui/icons-material/Close';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
@@ -72,7 +74,7 @@ import FloatingCombatText from './FloatingCombatText';
 import PostBattlePanel from './battle/PostBattlePanel';
 import BattleSetup, { RANDOM_ID } from './battle/BattleSetup';
 import type { PlayerProfile } from '../utils/progression';
-import { getMonProgress } from '../utils/progression';
+import { getMonProgress, registerMonProgress } from '../utils/progression';
 import {
     GAUNTLET_XP_MULTIPLIER,
     createGauntletStage,
@@ -84,6 +86,10 @@ import { getMovesetForPokemon } from '../utils/movesets';
 import type { Biome } from '../utils/safari';
 import { BIOMES, getBiome, rollWildEncounter } from '../utils/safari';
 import { getAchievement } from '../utils/achievements';
+import type { JourneyNode, JourneyTrainer } from '../data/journey';
+import { JOURNEY_NODES, isNodeComplete, journeyBattleLevel, getJourneyNode } from '../data/journey';
+import JourneyMap from './battle/JourneyMap';
+import { fetchPokemonById } from '../utils/evolution';
 import { TOWER_LEVEL, TOWER_TEAM_SIZE, isTowerBossBattle, pickTowerOpponents } from '../utils/tower';
 import { backgroundUrl, pickBattleBackgroundId } from '../data/battleBackgrounds';
 import type { LeagueStage } from '../data/league';
@@ -106,6 +112,7 @@ import RecruitOfferCard from './battle/RecruitOfferCard';
 import EvolutionPrompt from './battle/EvolutionPrompt';
 import {
     getVolume,
+    playChime,
     playCry,
     playMusic,
     playSound,
@@ -122,6 +129,8 @@ interface Props {
     typeEffectiveness: TypeChart;
     onAddPokemonToTeam: (teamId: string, pokemon: Pokemon) => void;
     onEvolvePokemon: (oldId: number, newPokemon: Pokemon) => void;
+    /** Create or replace a team (used by the Journey starter pick). */
+    onCreateTeam: (teamId: string, name: string, pokemon: Pokemon[]) => void;
     profile: PlayerProfile;
     updateProfile: (updater: (prev: PlayerProfile) => PlayerProfile) => void;
 }
@@ -203,9 +212,65 @@ const MonStatusPanel: React.FC<{
     mon: BattleMon;
     align: 'left' | 'right';
     getTypeColor: (type: string) => string;
-}> = ({ mon, align, getTypeColor }) => {
+    /** Phone layout: one-line pill that leaves the sprites visible. */
+    dense?: boolean;
+}> = ({ mon, align, getTypeColor, dense = false }) => {
     const hpPct = mon.currentHp / mon.maxHp;
     const displayHp = useAnimatedNumber(mon.currentHp);
+    if (dense) {
+        return (
+            <motion.div
+                key={mon.key}
+                initial={{ x: align === 'left' ? -40 : 40, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+            >
+                <Paper
+                    elevation={4}
+                    sx={{
+                        px: 0.75,
+                        py: 0.5,
+                        maxWidth: '46vw',
+                        background: 'rgba(13, 20, 40, 0.82)',
+                        border: mon.shiny ? '1px solid rgba(255, 215, 0, 0.65)' : '1px solid rgba(74, 144, 226, 0.5)',
+                        borderRadius: 2,
+                        backdropFilter: 'blur(4px)',
+                    }}
+                >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
+                        <Typography sx={{ fontWeight: 700, textTransform: 'capitalize', color: '#fff', fontSize: '0.72rem', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {mon.pokemon.name}
+                        </Typography>
+                        <Typography sx={{ color: '#9fb3d9', fontSize: '0.62rem', whiteSpace: 'nowrap' }}>Lv {mon.level}</Typography>
+                        {mon.status && (
+                            <Chip
+                                label={STATUS_LABELS[mon.status.type]}
+                                size="small"
+                                sx={{ height: 14, fontSize: '0.5rem', bgcolor: STATUS_COLORS[mon.status.type], color: '#fff', fontWeight: 700, '& .MuiChip-label': { px: 0.5 } }}
+                            />
+                        )}
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25 }}>
+                        <AnimatedHpBar pct={hpPct} height={6} color={hpColor(hpPct)} />
+                        <Typography sx={{ color: '#fff', fontSize: '0.58rem', whiteSpace: 'nowrap' }}>
+                            {displayHp}/{mon.maxHp}
+                        </Typography>
+                    </Box>
+                    <LinearProgress
+                        variant="determinate"
+                        value={(mon.energy / mon.maxEnergy) * 100}
+                        sx={{
+                            mt: 0.4,
+                            height: 3,
+                            borderRadius: 2,
+                            bgcolor: 'rgba(255,255,255,0.12)',
+                            '& .MuiLinearProgress-bar': { bgcolor: '#ffd54f', transition: 'transform 0.6s ease' },
+                        }}
+                    />
+                </Paper>
+            </motion.div>
+        );
+    }
     return (
         <motion.div
             key={mon.key}
@@ -327,7 +392,7 @@ const TeamRoster: React.FC<{
     </Box>
 );
 
-const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeEffectiveness, onAddPokemonToTeam, onEvolvePokemon, profile, updateProfile }) => {
+const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeEffectiveness, onAddPokemonToTeam, onEvolvePokemon, onCreateTeam, profile, updateProfile }) => {
     const [team1Id, setTeam1Id] = useState<string>(() => localStorage.getItem('battleSimulator_team1') || '');
     const [team2Id, setTeam2Id] = useState<string>(() => localStorage.getItem('battleSimulator_team2') || '');
     const [aiDifficulty, setAIDifficulty] = useState<AIDifficulty>('intermediate');
@@ -352,6 +417,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
 
     // Battle Tower state
     const [towerMode, setTowerMode] = useState(false);
+
+    // Kanto Journey state
+    const [journeyOpen, setJourneyOpen] = useState(false);
+    const [journeyTrainerId, setJourneyTrainerId] = useState<string | null>(null);
 
     // League challenge state
     const [leagueStageId, setLeagueStageId] = useState<string | null>(null);
@@ -416,6 +485,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         leagueStage,
         leagueRematch,
         towerMode,
+        journeyTrainerId,
         pokemons,
         profile,
         updateProfile,
@@ -425,9 +495,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         onEvolvePokemon,
     });
 
-    // Compact (stacked) battle dock on small screens
+    // Compact (stacked) battle dock on small screens; phone = tight portrait layout
     const theme = useTheme();
     const compact = useMediaQuery(theme.breakpoints.down('md'));
+    const phone = useMediaQuery(theme.breakpoints.down('sm'));
+    const [logOpen, setLogOpen] = useState(false);
 
     useEffect(() => {
         preloadSounds();
@@ -563,6 +635,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setLeagueStageId(null);
             setSafariBiomeId(null);
             setTowerMode(false);
+            setJourneyTrainerId(null);
             gauntletHpRef.current = {};
             setBackdropUrl(backgroundUrl(pickBattleBackgroundId({ rng: Math.random })));
             // Hotseat gives both sides the stock inventory (profile items stay untouched)
@@ -680,6 +753,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setLeagueRematch(rematch);
             setSafariBiomeId(null);
             setTowerMode(false);
+            setJourneyTrainerId(null);
             setBackdropUrl(backgroundUrl(stage.backdropId));
             const state = createEngineState(team1, team2, { 1: { ...profile.items }, 2: createInventory() });
             launchBattle(state, rematch ? `Round 2! ${stage.title} ${stage.name} wants revenge!` : `${stage.title} ${stage.name} challenges you!`, {
@@ -700,6 +774,86 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const handleLeagueContinue = () => {
         const next = nextLeagueStage(profile.league.defeated);
         if (next) void startLeagueStage(next);
+    };
+
+    // ---------- Kanto Journey ----------
+    const handlePickStarter = async (starterId: number) => {
+        if (starting) return;
+        setStarting(true);
+        try {
+            const starter = await fetchPokemonById(starterId);
+            updateProfile(prev => {
+                const withMon = registerMonProgress(prev, { id: starterId, level: 5 });
+                return { ...withMon, journey: { ...prev.journey, started: true, starterId, position: 'pallet-town' } };
+            });
+            onCreateTeam('journey-team', 'Journey Team', [starter]);
+            setTeam1Id('journey-team');
+            playChime('recruit');
+        } catch {
+            addLog('Couldn\u2019t reach PokeAPI to fetch your starter \u2014 try again.');
+        } finally {
+            setStarting(false);
+        }
+    };
+
+    const startJourneyTrainerBattle = async (node: JourneyNode, trainer: JourneyTrainer) => {
+        if (starting) return;
+        const t1 = teams.find(t => t.id === team1Id);
+        if (!t1 || t1.pokemon.length === 0) return;
+
+        setStarting(true);
+        try {
+            const roster = await Promise.all(trainer.speciesIds.map(id => fetchPokemonById(id)));
+            const movesets = await fetchMovesets([...t1.pokemon, ...roster]);
+            const level = journeyBattleLevel(node, playerAvgLevel(t1));
+
+            const team1 = t1.pokemon.map((p, i) => {
+                const progress = getMonProgress(profile, p.id);
+                return createBattleMon(p, 1, i, progress.level, getAbilityForTypes(p.types), {
+                    shiny: progress.shiny,
+                    statMod: recruitStatMod(progress.elite),
+                    heldItem: progress.heldItem,
+                    moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                });
+            });
+            const team2 = roster.map((p, i) =>
+                createBattleMon(p, 2, i, level, getAbilityForTypes(p.types), { moves: movesets.get(p.id) })
+            );
+
+            setOpponentKind('ai');
+            setAIDifficulty(trainer.difficulty);
+            setAIPersonality(trainer.personality);
+            setGauntletStage(null);
+            setLeagueStageId(null);
+            setSafariBiomeId(null);
+            setTowerMode(false);
+            setJourneyTrainerId(trainer.id);
+            gauntletHpRef.current = {};
+            const biome = node.biomeId ? getBiome(node.biomeId) : undefined;
+            const backdropId = biome ? biome.backdrops[Math.floor(Math.random() * biome.backdrops.length)] : pickBattleBackgroundId({ rng: Math.random });
+            setBackdropUrl(backgroundUrl(backdropId));
+            const state = createEngineState(team1, team2, { 1: { ...profile.items }, 2: createInventory() });
+            launchBattle(state, `${trainer.title} ${trainer.name} wants to battle!`, {
+                leftLabel: t1.name,
+                leftSprites: t1.pokemon.map(p => getBattleSprites(p.id).artwork),
+                rightLabel: trainer.name,
+                rightSubLabel: `${trainer.title} — ${node.name}`,
+                rightKind: 'ai',
+            });
+        } catch {
+            addLog('Couldn\u2019t reach PokeAPI to build the trainer\u2019s team \u2014 check your connection and retry.');
+        } finally {
+            setStarting(false);
+        }
+    };
+
+    const handleJourneyTravel = (toNodeId: string) => {
+        updateProfile(prev => ({
+            ...prev,
+            journey: { ...prev.journey, position: toNodeId },
+            balls: { ...prev.balls, pokeball: (prev.balls.pokeball ?? 0) + 2 },
+        }));
+        playChime('recruit');
     };
 
     const startTowerBattle = async () => {
@@ -738,6 +892,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setLeagueStageId(null);
             setSafariBiomeId(null);
             setTowerMode(true);
+            setJourneyTrainerId(null);
             gauntletHpRef.current = {};
             setBackdropUrl(backgroundUrl('skypillar'));
             // Fixed loadout each battle — the tower never touches your bag
@@ -791,6 +946,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             setLeagueStageId(null);
             setSafariBiomeId(biome.id);
             setTowerMode(false);
+            setJourneyTrainerId(null);
             gauntletHpRef.current = {};
             const backdropId = biome.backdrops[Math.floor(Math.random() * biome.backdrops.length)];
             setBackdropUrl(backgroundUrl(backdropId));
@@ -838,6 +994,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         setSafariBiomeId(null);
         setTowerMode(false);
         setLeagueRematch(false);
+        setJourneyTrainerId(null);
         setBackdropUrl(null);
         setIntro(null);
         pendingBeginRef.current = null;
@@ -908,6 +1065,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     // ---------- Team selection screen ----------
     if (!engine) {
         return (
+            <>
             <BattleSetup
                 teams={teams}
                 pokemons={pokemons}
@@ -926,6 +1084,34 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 starting={starting}
                 opponentKind={opponentKind}
                 onOpponentKindChange={setOpponentKind}
+            
+                journeyCard={
+                    <>
+                <Paper sx={{ p: 2.5, border: '1px solid rgba(255, 215, 0, 0.35)' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                                <Typography sx={{ fontSize: 32 }}>🗺️</Typography>
+                                <Box sx={{ flexGrow: 1, minWidth: 240 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#ffd700' }}>
+                                        Kanto Journey
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {profile.journey.started
+                                            ? `Currently at ${getJourneyNode(profile.journey.position)?.name ?? 'Pallet Town'} — ${JOURNEY_NODES.filter(n => isNodeComplete(n, profile.journey, profile.league)).length}/${JOURNEY_NODES.length} locations cleared.`
+                                            : 'The adventure mode: pick a starter, travel from Pallet Town to the Indigo Plateau, battle trainers, catch wild Pokémon and take on the gyms along the way.'}
+                                    </Typography>
+                                </Box>
+                                <Button
+                                    variant="contained"
+                                    sx={{ bgcolor: '#ffd700', color: '#1a1a2e', fontWeight: 700, '&:hover': { bgcolor: '#e6c200' } }}
+                                    disabled={pokemons.length === 0}
+                                    onClick={() => setJourneyOpen(true)}
+                                >
+                                    {profile.journey.started ? 'Continue Journey' : 'Begin Journey'}
+                                </Button>
+                            </Box>
+                        </Paper>
+                    </>
+                }
             >
                 <Paper sx={{ p: 2.5, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                     <WhatshotIcon sx={{ fontSize: 36, color: '#ff8a65' }} />
@@ -1039,6 +1225,24 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     </Box>
                 </Paper>
             </BattleSetup>
+            <JourneyMap
+                open={journeyOpen}
+                onClose={() => setJourneyOpen(false)}
+                profile={profile}
+                starting={starting}
+                onPickStarter={id => void handlePickStarter(id)}
+                onWildEncounter={node => {
+                    const biome = node.biomeId ? getBiome(node.biomeId) : undefined;
+                    if (biome) void startSafariEncounter(biome);
+                }}
+                onTrainerBattle={(node, trainer) => void startJourneyTrainerBattle(node, trainer)}
+                onGymChallenge={stageId => {
+                    const stage = getLeagueStage(stageId);
+                    if (stage) void startLeagueStage(stage);
+                }}
+                onTravel={handleJourneyTravel}
+            />
+            </>
         );
     }
 
@@ -1165,7 +1369,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             )}
 
             {/* 3D scene with overlays */}
-            <Box sx={{ position: 'relative', flexGrow: 1, minHeight: '46vh' }}>
+            <Box sx={{ position: 'relative', flexGrow: 1, minHeight: phone ? '34vh' : '46vh' }}>
                 <BattleScene3D
                     leftMon={leftMon}
                     rightMon={rightMon}
@@ -1176,13 +1380,13 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     backdrop={backdropUrl}
                 />
                 {leftMon && (
-                    <Box sx={{ position: 'absolute', top: 12, left: 12 }}>
-                        <MonStatusPanel key={leftMon.key} mon={leftMon} align="left" getTypeColor={getTypeColor} />
+                    <Box sx={{ position: 'absolute', top: phone ? 6 : 12, left: phone ? 6 : 12 }}>
+                        <MonStatusPanel key={leftMon.key} mon={leftMon} align="left" getTypeColor={getTypeColor} dense={phone} />
                     </Box>
                 )}
                 {rightMon && (
-                    <Box sx={{ position: 'absolute', top: 12, right: 12 }}>
-                        <MonStatusPanel key={rightMon.key} mon={rightMon} align="right" getTypeColor={getTypeColor} />
+                    <Box sx={{ position: 'absolute', top: phone ? 6 : 12, right: phone ? 6 : 12 }}>
+                        <MonStatusPanel key={rightMon.key} mon={rightMon} align="right" getTypeColor={getTypeColor} dense={phone} />
                     </Box>
                 )}
                 {floatingTexts.map(ft => (
@@ -1232,8 +1436,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         display: 'flex',
                         flexDirection: compact ? 'column' : 'row',
                         gap: compact ? 1 : 2,
-                        px: 2,
-                        py: 1.5,
+                        px: phone ? 1.25 : 2,
+                        py: phone ? 1 : 1.5,
                         flexWrap: { xs: 'nowrap', lg: 'nowrap' },
                     }}
                 >
@@ -1280,6 +1484,17 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                     sx={{ flexGrow: 1, fontWeight: 700 }}
                                 >
                                     ⚪ Ball
+                                </Button>
+                            )}
+                            {phone && (
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => setLogOpen(true)}
+                                    startIcon={<ArticleIcon />}
+                                    sx={{ color: '#fff', borderColor: 'rgba(255,255,255,0.3)', flexGrow: 1 }}
+                                >
+                                    Log
                                 </Button>
                             )}
                         </Box>
@@ -1350,20 +1565,36 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                 })}
                             </Stack>
                         </Popover>
-                        <Box>
-                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>{hotseat ? 'Player 1' : 'Your team'}</Typography>
-                            <TeamRoster state={engine} team={1} />
-                        </Box>
-                        <Box>
-                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>{hotseat ? 'Player 2' : 'Opponent team'}</Typography>
-                            <TeamRoster state={engine} team={2} />
+                        <Box sx={{ display: 'flex', flexDirection: phone ? 'row' : 'column', gap: 1, justifyContent: phone ? 'space-between' : 'flex-start' }}>
+                            <Box>
+                                <Typography variant="caption" sx={{ color: '#94a3b8' }}>{hotseat ? 'Player 1' : 'Your team'}</Typography>
+                                <TeamRoster state={engine} team={1} />
+                            </Box>
+                            <Box>
+                                <Typography variant="caption" sx={{ color: '#94a3b8' }}>{hotseat ? 'Player 2' : 'Opponent team'}</Typography>
+                                <TeamRoster state={engine} team={2} />
+                            </Box>
                         </Box>
                     </Box>
-                    <Box sx={{ flex: compact ? '0 0 auto' : '1 1 300px', minWidth: compact ? 0 : 280, height: compact ? 120 : 190 }}>
-                        <BattleLog logs={logs} />
-                    </Box>
+                    {!phone && (
+                        <Box sx={{ flex: compact ? '0 0 auto' : '1 1 300px', minWidth: compact ? 0 : 280, height: compact ? 120 : 190 }}>
+                            <BattleLog logs={logs} />
+                        </Box>
+                    )}
                 </Box>
             </Box>
+
+            {/* Phone: battle log lives in a bottom sheet */}
+            <Drawer
+                anchor="bottom"
+                open={phone && logOpen}
+                onClose={() => setLogOpen(false)}
+                PaperProps={{ sx: { background: 'rgba(10, 15, 30, 0.97)', borderTopLeftRadius: 12, borderTopRightRadius: 12, p: 1.5 } }}
+            >
+                <Box sx={{ height: '42vh' }}>
+                    <BattleLog logs={logs} />
+                </Box>
+            </Drawer>
 
             {/* Post-battle results overlay (covers the whole battle screen) */}
                 {engine.phase === 'gameOver' && engine.winner !== null && (

@@ -51,6 +51,8 @@ interface BattleSetupProps {
     onOpponentKindChange: (kind: 'ai' | 'human') => void;
     /** Extra mode cards / actions rendered below the standard controls. */
     children?: React.ReactNode;
+    /** Rendered even when no teams exist yet (the Journey onboards new players). */
+    journeyCard?: React.ReactNode;
 }
 
 const RecordsCard: React.FC<{ records: PlayerRecords }> = ({ records }) => (
@@ -100,6 +102,7 @@ const BattleSetup: React.FC<BattleSetupProps> = ({
     opponentKind,
     onOpponentKindChange,
     children,
+    journeyCard,
 }) => {
     const selectableTeams = useMemo(() => teams.filter(t => t.pokemon.length > 0), [teams]);
     const team1 = selectableTeams.find(t => t.id === team1Id);
@@ -151,11 +154,15 @@ const BattleSetup: React.FC<BattleSetupProps> = ({
                 <SportsMmaIcon fontSize="large" color="primary" /> Battle Simulator
             </Typography>
             {selectableTeams.length < 1 ? (
-                <Typography color="text.secondary">
-                    Create at least one team with Pokémon in the Team Builder to start a battle.
-                </Typography>
+                <Stack spacing={3} sx={{ mt: 2 }}>
+                    {journeyCard}
+                    <Typography color="text.secondary">
+                        Or create a team with Pokémon in the Team Builder to jump straight into a battle.
+                    </Typography>
+                </Stack>
             ) : (
                 <Stack spacing={3} sx={{ mt: 2 }}>
+                    {journeyCard}
                     <RecordsCard records={profile.records} />
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
                         <Paper sx={{ p: 2.5, flex: 1, minWidth: 280 }}>

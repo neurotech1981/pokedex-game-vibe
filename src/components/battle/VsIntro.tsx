@@ -58,10 +58,10 @@ const VsIntro: React.FC<VsIntroProps> = ({ payload, onDone }) => {
                     gap: 12,
                 }}
             >
-                <Typography variant="h4" sx={{ color: '#fff', fontWeight: 800 }}>
+                <Typography variant="h4" sx={{ color: '#fff', fontWeight: 800, fontSize: { xs: '1.35rem', sm: '2.125rem' } }}>
                     {payload.leftLabel}
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 1 }}>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', maxWidth: '42vw' }}>
                     {payload.leftSprites.slice(0, 6).map((src, i) => (
                         <motion.img
                             key={i}
@@ -70,7 +70,8 @@ const VsIntro: React.FC<VsIntroProps> = ({ payload, onDone }) => {
                             initial={{ opacity: 0, y: 24 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.25 + i * 0.08 }}
-                            style={{ width: 64, height: 64, objectFit: 'contain' }}
+                            className="vs-intro-sprite"
+                            style={{ width: 'min(64px, 11vw)', height: 'min(64px, 11vw)', objectFit: 'contain' }}
                         />
                     ))}
                 </Box>
@@ -103,7 +104,7 @@ const VsIntro: React.FC<VsIntroProps> = ({ payload, onDone }) => {
                         <Avatar
                             src={payload.rightPortrait}
                             variant="rounded"
-                            sx={{ width: 96, height: 96, imageRendering: 'pixelated', bgcolor: 'rgba(255,255,255,0.08)' }}
+                            sx={{ width: { xs: 64, sm: 96 }, height: { xs: 64, sm: 96 }, imageRendering: 'pixelated', bgcolor: 'rgba(255,255,255,0.08)' }}
                         />
                     </motion.div>
                 ) : (
@@ -117,7 +118,7 @@ const VsIntro: React.FC<VsIntroProps> = ({ payload, onDone }) => {
                             : <SmartToyIcon sx={{ fontSize: 84, color: 'rgba(255,255,255,0.85)' }} />}
                     </motion.div>
                 )}
-                <Typography variant="h4" sx={{ color: '#fff', fontWeight: 800, textAlign: 'right' }}>
+                <Typography variant="h4" sx={{ color: '#fff', fontWeight: 800, textAlign: 'right', fontSize: { xs: '1.35rem', sm: '2.125rem' } }}>
                     {payload.rightLabel}
                 </Typography>
                 {payload.rightSubLabel && (
@@ -148,7 +149,7 @@ const VsIntro: React.FC<VsIntroProps> = ({ payload, onDone }) => {
             >
                 <Typography
                     sx={{
-                        fontSize: 96,
+                        fontSize: { xs: 56, sm: 96 },
                         fontWeight: 900,
                         backgroundImage: 'linear-gradient(135deg, #ffd700 0%, #ff8a65 100%)',
                         WebkitBackgroundClip: 'text',

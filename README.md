@@ -20,11 +20,13 @@ A full-featured Pokédex and Pokémon battle game built with React 19, TypeScrip
 - Heuristic AI with difficulties (beginner → expert, with predictive switching) and personalities
 
 ### Ways to play
+- **Kanto Journey** — the adventure mode: pick a starter, travel Pallet Town → Indigo Plateau,
+  battle trainers, catch wild Pokémon and take on gyms along the way
 - **Quick battle** vs AI or hotseat PvP on one keyboard
 - **Safari expeditions** — explore biomes, weaken wild Pokémon and catch them with Poké Balls
 - **Gauntlet** — endless escalating stages with boss fights
-- **Pokémon League** — 8 Kanto Gym Leaders, the Elite Four and Champion, with badges,
-  post-game Round 2 rematches
+- **Pokémon League** — 8 Kanto Gym Leaders, the Elite Four and Champion, then the Johto
+  post-game: 8 more gyms and Red at Mt. Silver; badges + Round 2 rematches
 - **Battle Tower** — level-normalized pure-skill streak ladder
 
 ### Progression
@@ -32,6 +34,8 @@ A full-featured Pokédex and Pokémon battle game built with React 19, TypeScrip
 - Item and Poké Ball economy from battle drops; held-item collection
 - Recruitment, Box storage, shiny and elite Pokémon
 - Achievements and a Trainer Card
+
+Fully responsive — plays great on phones.
 
 ## Development
 

@@ -3,7 +3,7 @@ import { Avatar, Box, Chip, Grid, Paper, Tooltip, Typography } from '@mui/materi
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import type { PlayerProfile } from '../utils/progression';
 import { ACHIEVEMENTS } from '../utils/achievements';
-import { GYM_STAGES } from '../data/league';
+import { GYM_STAGES, JOHTO_GYM_STAGES } from '../data/league';
 import { BALLS, BALL_IDS } from '../data/items';
 import { getBattleSprites } from '../utils/spriteSources';
 
@@ -56,9 +56,11 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile }) => {
 
             {/* Badge case */}
             <Paper sx={{ p: 2.5 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>Kanto Badges</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+                    Badges {league.champion2 && '· 🔴 Red defeated — the true ending'}
+                </Typography>
                 <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
-                    {GYM_STAGES.map(stage => {
+                    {[...GYM_STAGES, ...JOHTO_GYM_STAGES].map(stage => {
                         const earned = league.defeated.includes(stage.id);
                         return (
                             <Tooltip key={stage.id} title={`${stage.badge!.name} — ${stage.name}`}>

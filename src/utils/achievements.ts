@@ -1,7 +1,7 @@
 import type { BallId, HeldItemId, ItemId } from '../data/items';
 import type { PlayerProfile } from './progression';
 import { addBalls, addHeldItems, addItems } from './progression';
-import { GYM_STAGES } from '../data/league';
+import { GYM_STAGES, JOHTO_GYM_STAGES } from '../data/league';
 
 /**
  * Achievements: pure predicates over the player profile, evaluated after
@@ -77,6 +77,18 @@ export const ACHIEVEMENTS: Achievement[] = [
         description: 'Defeat the Elite Four and the Champion.',
         reward: { balls: ['ultraball', 'ultraball', 'ultraball'] },
         check: p => p.league.champion,
+    },
+    {
+        id: 'johto-badges-8', name: 'Johto Trailblazer', emoji: '🎌',
+        description: 'Earn all 8 Johto gym badges.',
+        reward: { balls: ['ultraball', 'ultraball'] },
+        check: p => JOHTO_GYM_STAGES.every(s => p.league.defeated.includes(s.id)),
+    },
+    {
+        id: 'champion-red', name: 'The Very Best', emoji: '🔴',
+        description: 'Defeat Red at Mt. Silver — the true ending.',
+        reward: { heldItems: ['leftovers'], balls: ['ultraball', 'ultraball', 'ultraball'] },
+        check: p => p.league.champion2,
     },
     {
         id: 'gauntlet-10', name: 'Gauntlet Runner', emoji: '🏃',

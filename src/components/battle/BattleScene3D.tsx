@@ -679,7 +679,7 @@ const WeatherFlash: React.FC<{ weather: WeatherType }> = ({ weather }) => {
  * Safari catch sequence: ball arcs to the wild mon, wobbles `shakes` times,
  * then locks (caught: white flash, ball stays) or bursts open (broke free).
  */
-const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes, caught }) => {
+const CatchBallEffect: React.FC<{ shakes: number; caught: boolean; from: [number, number, number]; to: [number, number, number] }> = ({ shakes, caught, from: FROM, to: TO }) => {
     const ballRef = useRef<THREE.Mesh>(null);
     const flashRef = useRef<THREE.Mesh>(null);
     const flashMatRef = useRef<THREE.MeshBasicMaterial>(null);
@@ -703,9 +703,9 @@ const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes
             const p = elapsed / FLIGHT;
             ball.visible = true;
             ball.position.set(
-                PLAYER_POS[0] + (ENEMY_POS[0] - PLAYER_POS[0]) * p,
-                PLAYER_POS[1] + (ENEMY_POS[1] - PLAYER_POS[1]) * p + Math.sin(p * Math.PI) * 1.4,
-                PLAYER_POS[2] + (ENEMY_POS[2] - PLAYER_POS[2]) * p + 0.4
+                FROM[0] + (TO[0] - FROM[0]) * p,
+                FROM[1] + (TO[1] - FROM[1]) * p + Math.sin(p * Math.PI) * 1.4,
+                FROM[2] + (TO[2] - FROM[2]) * p + 0.4
             );
             ball.rotation.z = -p * Math.PI * 3;
             flash.visible = false;
@@ -713,9 +713,9 @@ const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes
         }
 
         // Sitting at the target, wobbling
-        const sitX = ENEMY_POS[0];
-        const sitY = ENEMY_POS[1] - 0.6;
-        ball.position.set(sitX, sitY, ENEMY_POS[2] + 0.4);
+        const sitX = TO[0];
+        const sitY = TO[1] - 0.6;
+        ball.position.set(sitX, sitY, TO[2] + 0.4);
         if (elapsed < total) {
             const shakePhase = ((elapsed - FLIGHT) % SHAKE) / SHAKE;
             ball.rotation.z = Math.sin(shakePhase * Math.PI * 2) * 0.4;
@@ -729,7 +729,7 @@ const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes
             ball.rotation.z = 0;
             if (after < 0.45) {
                 flash.visible = true;
-                flash.position.set(sitX, sitY, ENEMY_POS[2] + 0.5);
+                flash.position.set(sitX, sitY, TO[2] + 0.5);
                 flash.scale.setScalar(0.6 + after * 4);
                 flashMat.color.set('#ffffff');
                 flashMat.opacity = 0.9 * (1 - after / 0.45);
@@ -740,7 +740,7 @@ const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes
             ball.visible = false;
             if (after < 0.35) {
                 flash.visible = true;
-                flash.position.set(sitX, sitY + 0.3, ENEMY_POS[2] + 0.5);
+                flash.position.set(sitX, sitY + 0.3, TO[2] + 0.5);
                 flash.scale.setScalar(0.8 + after * 5);
                 flashMat.color.set('#ff8a65');
                 flashMat.opacity = 0.8 * (1 - after / 0.35);
@@ -770,8 +770,11 @@ const CatchBallEffect: React.FC<{ shakes: number; caught: boolean }> = ({ shakes
     );
 };
 
-/** Brief fov dolly-in when a Pokémon faints. FOV only — never touch position/rotation. */
-const CameraRig: React.FC<{ fx: SceneFx | null }> = ({ fx }) => {
+/**
+ * Owns camera fov: the portrait-aware base plus a brief dolly-in on faints.
+ * FOV only — never touch position/rotation.
+ */
+const CameraRig: React.FC<{ fx: SceneFx | null; baseFov: number }> = ({ fx, baseFov }) => {
     const lastId = useRef(-1);
     const dollyStart = useRef<number | null>(null);
 
@@ -782,15 +785,19 @@ const CameraRig: React.FC<{ fx: SceneFx | null }> = ({ fx }) => {
             lastId.current = fx.id;
             dollyStart.current = t;
         }
-        if (dollyStart.current === null) return;
-        const elapsed = t - dollyStart.current;
-        let fov = 40;
-        if (elapsed < 0.35) fov = 40 - 7 * (elapsed / 0.35);
-        else if (elapsed < 0.75) fov = 33;
-        else if (elapsed < 1.2) fov = 33 + 7 * ((elapsed - 0.75) / 0.45);
-        else dollyStart.current = null;
-        cam.fov = fov;
-        cam.updateProjectionMatrix();
+        let fov = baseFov;
+        if (dollyStart.current !== null) {
+            const elapsed = t - dollyStart.current;
+            const dip = baseFov - 7;
+            if (elapsed < 0.35) fov = baseFov - 7 * (elapsed / 0.35);
+            else if (elapsed < 0.75) fov = dip;
+            else if (elapsed < 1.2) fov = dip + 7 * ((elapsed - 0.75) / 0.45);
+            else dollyStart.current = null;
+        }
+        if (Math.abs(cam.fov - fov) > 0.01) {
+            cam.fov = fov;
+            cam.updateProjectionMatrix();
+        }
     });
 
     return null;
@@ -919,8 +926,21 @@ const WeatherParticles: React.FC<{ weather: WeatherType }> = ({ weather }) => {
 
 const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weather, terrain, fx, getTypeColor, backdrop = null }) => {
     const fog = WEATHER_FOG[weather];
+    const { size } = useThree();
+    // Portrait phones: pull the combatants toward the center and widen the
+    // fov so neither sprite crops out of the narrow view.
+    const narrow = size.width / Math.max(1, size.height) < 1;
+    const playerPos = useMemo<[number, number, number]>(
+        () => (narrow ? [PLAYER_POS[0] * 0.4, PLAYER_POS[1], PLAYER_POS[2] - 0.5] : PLAYER_POS),
+        [narrow]
+    );
+    const enemyPos = useMemo<[number, number, number]>(
+        () => (narrow ? [ENEMY_POS[0] * 0.55, ENEMY_POS[1] - 0.15, ENEMY_POS[2] - 0.7] : ENEMY_POS),
+        [narrow]
+    );
+    const baseFov = narrow ? 56 : 40;
     const targetIsPlayer = fx !== null && fx.attackerTeam === 2;
-    const targetPos = targetIsPlayer ? PLAYER_POS : ENEMY_POS;
+    const targetPos = targetIsPlayer ? playerPos : enemyPos;
     const fxOverride = fx?.moveName ? MOVE_FX_OVERRIDES[fx.moveName] : undefined;
 
     return (
@@ -981,7 +1001,7 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                 <PokemonSprite
                     key={leftMon.key}
                     mon={leftMon}
-                    position={PLAYER_POS}
+                    position={playerPos}
                     facing={1}
                     side={1}
                     scale={PLAYER_SCALE}
@@ -993,7 +1013,7 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                 <PokemonSprite
                     key={rightMon.key}
                     mon={rightMon}
-                    position={ENEMY_POS}
+                    position={enemyPos}
                     facing={-1}
                     side={2}
                     scale={ENEMY_SCALE}
@@ -1007,7 +1027,7 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
             {fx && fx.isDamaging && !fxOverride?.vertical && !fxOverride?.quake && fx.damageClass === 'special' && (
                 <BeamEffect
                     key={`beam-${fx.id}`}
-                    from={targetIsPlayer ? ENEMY_POS : PLAYER_POS}
+                    from={targetIsPlayer ? enemyPos : playerPos}
                     to={targetPos}
                     color={getTypeColor(fx.moveType)}
                     thickness={fxOverride?.beamScale ?? 1}
@@ -1019,14 +1039,14 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
             {fx && !fx.isDamaging && fx.damageClass === 'status' && (
                 <SparkleEffect
                     key={`spark-${fx.id}`}
-                    at={fx.attackerTeam === 1 ? PLAYER_POS : ENEMY_POS}
+                    at={fx.attackerTeam === 1 ? playerPos : enemyPos}
                     color={getTypeColor(fx.moveType)}
                 />
             )}
             {fx?.ballThrow && (
-                <CatchBallEffect key={`catch-${fx.id}`} shakes={fx.ballThrow.shakes} caught={fx.ballThrow.caught} />
+                <CatchBallEffect key={`catch-${fx.id}`} shakes={fx.ballThrow.shakes} caught={fx.ballThrow.caught} from={playerPos} to={enemyPos} />
             )}
-            <CameraRig fx={fx} />
+            <CameraRig fx={fx} baseFov={baseFov} />
             <Suspense fallback={null}>
                 {fx && fx.isDamaging && (
                     <ImpactEffect

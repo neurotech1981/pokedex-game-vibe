@@ -344,11 +344,11 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
 
     return (
         <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 1 }}>
                 <Typography variant="h5" sx={{ fontWeight: 700 }}>
                     Team Builder
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, flexWrap: 'wrap' }}>
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}

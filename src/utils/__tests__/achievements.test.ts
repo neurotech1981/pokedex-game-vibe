@@ -11,7 +11,7 @@ describe('achievements', () => {
     it('predicates fire on the right profile facts', () => {
         const p = createProfile();
         p.records = { ...p.records, wins: 25, bestStreak: 5, caught: 1, gauntletBestStage: 10 };
-        p.league = { defeated: GYM_STAGES.map(s => s.id), champion: true, defeatedRematches: [] };
+        p.league = { defeated: GYM_STAGES.map(s => s.id), champion: true, champion2: false, defeatedRematches: [] };
         p.mons = { 25: { xp: 0, level: 100, shiny: true, elite: true, customMoves: [{ name: 'Thunder', type: 'electric', power: 110, accuracy: 70, energyCost: 33 }] } };
         p.box = Array.from({ length: 10 }, () => ({ pokemon: { id: 1 } as never, level: 50 }));
         const earned = evaluateAchievements(p);

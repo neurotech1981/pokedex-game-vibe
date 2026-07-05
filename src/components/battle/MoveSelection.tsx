@@ -57,7 +57,7 @@ const MoveSelection: React.FC<MoveSelectionProps> = ({ mon, onSelectMove, disabl
         <Box
             sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                gridTemplateColumns: '1fr 1fr',
                 gap: 1,
                 height: '100%',
                 alignContent: 'stretch',
@@ -95,7 +95,8 @@ const MoveSelection: React.FC<MoveSelectionProps> = ({ mon, onSelectMove, disabl
                                     flexDirection: 'column',
                                     alignItems: 'stretch',
                                     gap: 0.5,
-                                    p: 1.25,
+                                    p: { xs: 0.75, sm: 1.25 },
+                                    minHeight: 44,
                                     borderRadius: 2.5,
                                     border: '1px solid',
                                     borderColor: `${color}88`,

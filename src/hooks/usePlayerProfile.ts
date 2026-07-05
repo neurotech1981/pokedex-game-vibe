@@ -17,6 +17,7 @@ export const loadProfile = (): PlayerProfile => {
             ...parsed,
             records: { ...defaults.records, ...parsed.records },
             league: { ...defaults.league, ...parsed.league },
+        journey: { ...defaults.journey, ...parsed.journey },
         };
     } catch {
         return createProfile();

@@ -45,6 +45,8 @@ interface UseBattleResultsOptions {
     leagueRematch: boolean;
     /** Battle Tower mode: level-normalized streak ladder. */
     towerMode: boolean;
+    /** Journey trainer being fought (id in journey.clearedTrainers on win). */
+    journeyTrainerId: string | null;
     pokemons: Pokemon[];
     profile: PlayerProfile;
     updateProfile: (updater: (prev: PlayerProfile) => PlayerProfile) => void;
@@ -66,6 +68,7 @@ export const useBattleResults = ({
     leagueStage,
     leagueRematch,
     towerMode,
+    journeyTrainerId,
     pokemons,
     profile,
     updateProfile,
@@ -134,14 +137,20 @@ export const useBattleResults = ({
                 league = {
                     ...league,
                     defeated: [...league.defeated, leagueStage.id],
-                    champion: league.champion || leagueStage.kind === 'champion',
+                    champion: league.champion || leagueStage.id === 'champion',
+                    champion2: league.champion2 || leagueStage.id === 'red',
                 };
             }
         }
         if (inLeague && won && leagueStage.badge) playChime('recruit'); // badge fanfare
 
+        // Journey trainer beaten → mark the route progress (idempotent)
+        const journey = journeyTrainerId && won && !withXp.journey.clearedTrainers.includes(journeyTrainerId)
+            ? { ...withXp.journey, clearedTrainers: [...withXp.journey.clearedTrainers, journeyTrainerId] }
+            : withXp.journey;
+
         // A caught wild mon goes straight to the Box with its battle level
-        let finalProfile: PlayerProfile = { ...withXp, records, items, heldItems, league, balls };
+        let finalProfile: PlayerProfile = { ...withXp, records, items, heldItems, league, balls, journey };
         if (caughtMon) {
             finalProfile = registerMonProgress(finalProfile, {
                 id: caughtMon.pokemon.id,
@@ -220,7 +229,7 @@ export const useBattleResults = ({
                 })
                 .catch(() => undefined); // hint is best-effort
         });
-    }, [addLog, battleStatsRef, engine, gauntletStage, leagueStage, leagueRematch, towerMode, hotseat, pokemons, profile, updateProfile]);
+    }, [addLog, battleStatsRef, engine, gauntletStage, leagueStage, leagueRematch, towerMode, journeyTrainerId, hotseat, pokemons, profile, updateProfile]);
 
     const registerRecruit = useCallback((offer: RecruitOffer) => {
         updateProfile(prev => registerMonProgress(prev, {

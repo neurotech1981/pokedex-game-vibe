@@ -120,11 +120,74 @@ export const LEAGUE_STAGES: LeagueStage[] = [
         typeTheme: 'mixed', backdropId: 'elite4drake', levelFloor: 80, difficulty: 'expert', personality: 'balanced',
         team: mons([18], [65, 0, 'quickClaw'], [112], [59, 0, 'charcoal'], [103], [9, 2, 'leftovers']),
     },
+
+    // ------------------------- Johto (post-game) ----------------------------
+    // Unlocks after becoming Kanto Champion; ends with the true final boss.
+    {
+        id: 'falkner', kind: 'gym', name: 'Falkner', title: 'Violet Gym Leader', portrait: 'falkner',
+        typeTheme: 'flying', backdropId: 'skypillar', levelFloor: 82, difficulty: 'expert', personality: 'aggressive',
+        team: mons([17], [22], [18, 2]),
+        badge: { name: 'Zephyr Badge', emoji: '🕊️', color: '#90caf9' },
+    },
+    {
+        id: 'bugsy', kind: 'gym', name: 'Bugsy', title: 'Azalea Gym Leader', portrait: 'bugsy',
+        typeTheme: 'bug', backdropId: 'forest', levelFloor: 84, difficulty: 'expert', personality: 'balanced',
+        team: mons([11], [14], [123, 2, 'focusSash']),
+        badge: { name: 'Hive Badge', emoji: '🐝', color: '#c0ca33' },
+    },
+    {
+        id: 'whitney', kind: 'gym', name: 'Whitney', title: 'Goldenrod Gym Leader', portrait: 'whitney',
+        typeTheme: 'normal', backdropId: 'city', levelFloor: 86, difficulty: 'expert', personality: 'defensive',
+        team: mons([35], [241, 2, 'leftovers']),
+        badge: { name: 'Plain Badge', emoji: '⭐', color: '#f5f5f5' },
+    },
+    {
+        id: 'morty', kind: 'gym', name: 'Morty', title: 'Ecruteak Gym Leader', portrait: 'morty',
+        typeTheme: 'ghost', backdropId: 'darkmeadow', levelFloor: 88, difficulty: 'expert', personality: 'defensive',
+        team: mons([92], [93], [200], [94, 2, 'quickClaw']),
+        badge: { name: 'Fog Badge', emoji: '👻', color: '#b39ddb' },
+    },
+    {
+        id: 'chuck', kind: 'gym', name: 'Chuck', title: 'Cianwood Gym Leader', portrait: 'chuck',
+        typeTheme: 'fighting', backdropId: 'beach', levelFloor: 90, difficulty: 'expert', personality: 'aggressive',
+        team: mons([57], [62, 2]),
+        badge: { name: 'Storm Badge', emoji: '🌀', color: '#4fc3f7' },
+    },
+    {
+        id: 'jasmine', kind: 'gym', name: 'Jasmine', title: 'Olivine Gym Leader', portrait: 'jasmine',
+        typeTheme: 'steel', backdropId: 'city', levelFloor: 92, difficulty: 'expert', personality: 'defensive',
+        team: mons([81], [82], [208, 2, 'leftovers']),
+        badge: { name: 'Mineral Badge', emoji: '⚙️', color: '#b0bec5' },
+    },
+    {
+        id: 'pryce', kind: 'gym', name: 'Pryce', title: 'Mahogany Gym Leader', portrait: 'pryce',
+        typeTheme: 'ice', backdropId: 'icecave', levelFloor: 94, difficulty: 'expert', personality: 'defensive',
+        team: mons([86], [87], [221, 2]),
+        badge: { name: 'Glacier Badge', emoji: '❄️', color: '#81d4fa' },
+    },
+    {
+        id: 'clair', kind: 'gym', name: 'Clair', title: 'Blackthorn Gym Leader', portrait: 'clair',
+        typeTheme: 'dragon', backdropId: 'dampcave', levelFloor: 96, difficulty: 'expert', personality: 'aggressive',
+        team: mons([148], [148], [230, 2, 'mysticWater']),
+        badge: { name: 'Rising Badge', emoji: '🐉', color: '#9575cd' },
+    },
+    {
+        id: 'red', kind: 'champion', name: 'Red', title: 'The Legend of Mt. Silver', portrait: 'red',
+        typeTheme: 'mixed', backdropId: 'icecave', levelFloor: 100, difficulty: 'expert', personality: 'balanced',
+        team: mons([25, 0, 'quickClaw'], [196], [143, 0, 'leftovers'], [3], [6, 0, 'charcoal'], [9, 0, 'mysticWater']),
+    },
 ];
+
+/** Stage ids belonging to the Johto post-game (require Kanto champion). */
+export const JOHTO_STAGE_IDS = new Set([
+    'falkner', 'bugsy', 'whitney', 'morty', 'chuck', 'jasmine', 'pryce', 'clair', 'red',
+]);
+export const JOHTO_STAGES = LEAGUE_STAGES.filter(s => JOHTO_STAGE_IDS.has(s.id));
+export const JOHTO_GYM_STAGES = JOHTO_STAGES.filter(s => s.kind === 'gym');
 
 const KIND_LEVEL_OFFSET: Record<LeagueStage['kind'], number> = { gym: 1, elite4: 3, champion: 5 };
 
-export const GYM_STAGES = LEAGUE_STAGES.filter(s => s.kind === 'gym');
+export const GYM_STAGES = LEAGUE_STAGES.filter(s => s.kind === 'gym' && !JOHTO_STAGE_IDS.has(s.id));
 
 export const getLeagueStage = (id: string): LeagueStage | undefined =>
     LEAGUE_STAGES.find(s => s.id === id);

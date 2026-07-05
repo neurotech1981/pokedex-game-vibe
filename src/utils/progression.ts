@@ -51,6 +51,8 @@ export interface LeagueProgress {
     /** League stage ids beaten, in any storage order (gating is positional). */
     defeated: string[];
     champion: boolean;
+    /** Beat Red at Mt. Silver — the true ending. */
+    champion2: boolean;
     /** Gym ids beaten again in post-game Round 2 rematches. */
     defeatedRematches: string[];
 }
@@ -68,6 +70,13 @@ export interface PlayerProfile {
     balls: BallInventory;
     /** Earned achievement ids (see src/utils/achievements.ts). */
     achievements: string[];
+    /** Kanto Journey adventure progress (see src/data/journey.ts). */
+    journey: {
+        started: boolean;
+        starterId?: number;
+        position: string;
+        clearedTrainers: string[];
+    };
 }
 
 export const createProfile = (): PlayerProfile => ({
@@ -77,9 +86,10 @@ export const createProfile = (): PlayerProfile => ({
     heldItems: {},
     records: { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, totalBattles: 0, gauntletBestStage: 0, caught: 0, towerStreak: 0, towerBestStreak: 0 },
     box: [],
-    league: { defeated: [], champion: false, defeatedRematches: [] },
+    league: { defeated: [], champion: false, champion2: false, defeatedRematches: [] },
     balls: { pokeball: 5 },
     achievements: [],
+    journey: { started: false, position: 'pallet-town', clearedTrainers: [] },
 });
 
 export const getMonProgress = (profile: PlayerProfile, pokemonId: number): MonProgress =>

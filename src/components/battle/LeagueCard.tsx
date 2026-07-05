@@ -20,6 +20,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import type { LeagueStage } from '../../data/league';
 import {
     GYM_STAGES,
+    JOHTO_GYM_STAGES,
     LEAGUE_STAGES,
     REMATCH_LEVEL_BONUS,
     nextLeagueStage,
@@ -87,6 +88,32 @@ const LeagueCard: React.FC<LeagueCardProps> = ({ league, stageLevel, starting, d
                     />
                 )}
             </Box>
+
+            {/* Johto badge case (post-game) */}
+            {league.champion && (
+                <Box sx={{ display: 'flex', gap: 0.75, mt: 0.75, flexWrap: 'wrap' }}>
+                    {JOHTO_GYM_STAGES.map(stage => {
+                        const earned = league.defeated.includes(stage.id);
+                        return (
+                            <Tooltip key={stage.id} title={`${stage.badge!.name} — ${stage.name} (Johto)`}>
+                                <Chip
+                                    label={`${stage.badge!.emoji} ${stage.badge!.name.replace(' Badge', '')}`}
+                                    size="small"
+                                    sx={{
+                                        fontWeight: 700,
+                                        bgcolor: earned ? stage.badge!.color : 'rgba(255,255,255,0.06)',
+                                        color: earned ? '#1a1a2e' : 'text.disabled',
+                                        opacity: earned ? 1 : 0.55,
+                                    }}
+                                />
+                            </Tooltip>
+                        );
+                    })}
+                    {league.champion2 && (
+                        <Chip label="🔴 RED DEFEATED" size="small" sx={{ fontWeight: 700, bgcolor: '#ef5350', color: '#fff' }} />
+                    )}
+                </Box>
+            )}
 
             {error && (
                 <Alert severity="warning" sx={{ mt: 1.5 }}>
