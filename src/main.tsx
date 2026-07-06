@@ -6,6 +6,9 @@ import CssBaseline from '@mui/material/CssBaseline'
 import App from './App.tsx'
 import './index.css'
 import theme from './theme'
+import { registerSW } from 'virtual:pwa-register'
+
+registerSW({ immediate: true })
 
 const queryClient = new QueryClient({
   defaultOptions: {

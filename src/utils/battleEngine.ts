@@ -7,6 +7,8 @@ import { getDamageClass, getMovesForTypes } from '../data/moves';
 import type { BallId, BallInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { BALLS, HELD_ITEMS, ITEMS, createInventory } from '../data/items';
 import { calculateTypeEffectiveness, TYPE_EFFECTIVENESS, TypeChart } from '../data/typeChart';
+import type { Ivs, IvStat } from '../data/natures';
+import { natureMultiplier } from '../data/natures';
 
 export type WeatherType = 'none' | 'rain' | 'sunny' | 'sandstorm' | 'hail';
 export type TeamId = 1 | 2;
@@ -37,6 +39,8 @@ export interface BattleMon {
     abilityUsed: boolean;
     /** Shiny/elite mons use alternate sprites and get a golden glow. */
     shiny?: boolean;
+    /** Nature id (stats already folded in at creation) — kept for UI/replays. */
+    nature?: string;
     /** The mon's usable moves this battle (defaults to type-derived moves). */
     moves: Move[];
     heldItem?: HeldItemId;
@@ -174,6 +178,10 @@ export interface BattleMonOptions {
     /** Explicit moveset (e.g. fetched from PokeAPI); defaults to type-derived moves. */
     moves?: Move[];
     heldItem?: HeldItemId;
+    /** Nature id from data/natures.ts: ±10% on one non-HP stat each. */
+    nature?: string;
+    /** Per-stat IVs 0–31, folded into base stats as +floor(iv/2). */
+    ivs?: Ivs;
 }
 
 export const createBattleMon = (
@@ -185,9 +193,23 @@ export const createBattleMon = (
     opts: BattleMonOptions = {}
 ): BattleMon => {
     const statMod = opts.statMod ?? 1;
-    const effectivePokemon = statMod === 1
+    // Effective base stat = round((base + floor(iv/2)) * natureMult * statMod).
+    // IVs add up to +15 points per stat (HP included); natures are ±10% on one
+    // non-HP stat each (natureMultiplier returns 1 for HP and neutral natures).
+    // With no opts this is the identity, so plain mons are untouched.
+    const effectivePokemon = statMod === 1 && !opts.nature && !opts.ivs
         ? pokemon
-        : { ...pokemon, stats: pokemon.stats.map(s => ({ ...s, base_stat: Math.round(s.base_stat * statMod) })) };
+        : {
+            ...pokemon,
+            stats: pokemon.stats.map(s => ({
+                ...s,
+                base_stat: Math.round(
+                    (s.base_stat + (opts.ivs ? Math.floor((opts.ivs[s.stat.name as IvStat] ?? 0) / 2) : 0))
+                    * natureMultiplier(opts.nature, s.stat.name)
+                    * statMod
+                ),
+            })),
+        };
     const maxHp = calculateMaxHp(effectivePokemon, level);
     const hpPct = Math.max(0, Math.min(1, opts.currentHpPct ?? 1));
     return {
@@ -198,6 +220,7 @@ export const createBattleMon = (
         maxHp,
         currentHp: Math.max(1, Math.round(maxHp * hpPct)),
         shiny: opts.shiny,
+        nature: opts.nature,
         energy: 100,
         maxEnergy: 100,
         energyRegen: 12,

@@ -38,6 +38,7 @@ import type { Move } from '../data/moves';
 import type { Pokemon, Team } from '../types/pokemon';
 import type { PlayerProfile } from '../utils/progression';
 import { availableHeldItems, getMonProgress, registerMonProgress } from '../utils/progression';
+import { IV_STATS, MAX_IV_TOTAL, ivTotal, natureLabel } from '../data/natures';
 import MoveManagerDialog from './MoveManagerDialog';
 
 interface Props {
@@ -523,6 +524,28 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                                         }}
                                                                     />
                                                                 ))}
+                                                                {progress.nature && (
+                                                                    <Tooltip
+                                                                        title={
+                                                                            progress.ivs
+                                                                                ? `IVs ${ivTotal(progress.ivs)}/${MAX_IV_TOTAL} · ${IV_STATS.map(
+                                                                                    s => `${{ hp: 'HP', attack: 'Atk', defense: 'Def', 'special-attack': 'SpA', 'special-defense': 'SpD', speed: 'Spe' }[s]} ${progress.ivs![s]}`
+                                                                                ).join(' · ')}`
+                                                                                : ''
+                                                                        }
+                                                                    >
+                                                                        <Chip
+                                                                            label={natureLabel(progress.nature)}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                fontSize: '0.6rem',
+                                                                                height: 20,
+                                                                                bgcolor: 'rgba(79, 142, 247, 0.18)',
+                                                                                border: '1px solid rgba(79, 142, 247, 0.4)',
+                                                                            }}
+                                                                        />
+                                                                    </Tooltip>
+                                                                )}
                                                             </Box>
                                                             <Button
                                                                 fullWidth

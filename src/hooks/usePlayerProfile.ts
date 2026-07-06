@@ -1,8 +1,47 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PlayerProfile } from '../utils/progression';
 import { createProfile } from '../utils/progression';
+import type { Rng } from '../utils/battleEngine';
+import { rollIvs, rollNature } from '../data/natures';
 
 const STORAGE_KEY = 'pokedexGame.profile.v1';
+
+/**
+ * Pure backfill for profiles saved before newer fields existed. Nature/IV
+ * rolls happen at most once per mon: entries that already carry them are
+ * never rerolled (the mount-persist effect writes the merged profile back,
+ * so the roll sticks).
+ */
+export const mergeProfile = (parsed: PlayerProfile, rng: Rng = Math.random): PlayerProfile => {
+    const defaults = createProfile();
+    const mons: PlayerProfile['mons'] = {};
+    for (const [id, mon] of Object.entries(parsed.mons ?? {})) {
+        mons[Number(id)] = {
+            ...mon,
+            nature: mon.nature ?? rollNature(rng),
+            ivs: mon.ivs ?? rollIvs(rng),
+        };
+    }
+    // Pre-dex saves: best-effort derivation — everything you own counts as caught (and seen).
+    const dex = parsed.dex
+        ? { ...defaults.dex, ...parsed.dex }
+        : (() => {
+            const owned = [...new Set([
+                ...Object.keys(parsed.mons ?? {}).map(Number),
+                ...(parsed.box ?? []).map(b => b.pokemon.id),
+            ])];
+            return { seen: owned, caught: owned };
+        })();
+    return {
+        ...defaults,
+        ...parsed,
+        mons,
+        records: { ...defaults.records, ...parsed.records },
+        league: { ...defaults.league, ...parsed.league },
+        journey: { ...defaults.journey, ...parsed.journey },
+        dex,
+    };
+};
 
 export const loadProfile = (): PlayerProfile => {
     try {
@@ -10,15 +49,7 @@ export const loadProfile = (): PlayerProfile => {
         if (!raw) return createProfile();
         const parsed = JSON.parse(raw) as PlayerProfile;
         if (parsed?.version !== 1) return createProfile();
-        // Backfill any fields added since the profile was first saved
-        const defaults = createProfile();
-        return {
-            ...defaults,
-            ...parsed,
-            records: { ...defaults.records, ...parsed.records },
-            league: { ...defaults.league, ...parsed.league },
-        journey: { ...defaults.journey, ...parsed.journey },
-        };
+        return mergeProfile(parsed);
     } catch {
         return createProfile();
     }

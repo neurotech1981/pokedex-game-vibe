@@ -1,7 +1,9 @@
 import type { BallId, HeldItemId, ItemId } from '../data/items';
 import type { PlayerProfile } from './progression';
-import { addBalls, addHeldItems, addItems } from './progression';
+import { KANTO_DEX_SIZE, addBalls, addHeldItems, addItems } from './progression';
 import { GYM_STAGES, JOHTO_GYM_STAGES } from '../data/league';
+
+const kantoCaught = (p: PlayerProfile): number => p.dex.caught.filter(id => id <= KANTO_DEX_SIZE).length;
 
 /**
  * Achievements: pure predicates over the player profile, evaluated after
@@ -121,6 +123,36 @@ export const ACHIEVEMENTS: Achievement[] = [
         description: 'Raise a Pokémon to level 100.',
         reward: { heldItems: ['leftovers'] },
         check: p => Object.values(p.mons).some(m => m.level >= 100),
+    },
+    {
+        id: 'dex-seen-50', name: 'Field Researcher', emoji: '🔍',
+        description: 'See 50 Kanto species in battle.',
+        reward: { balls: ['greatball', 'greatball'] },
+        check: p => p.dex.seen.filter(id => id <= KANTO_DEX_SIZE).length >= 50,
+    },
+    {
+        id: 'dex-caught-10', name: 'Dex Apprentice', emoji: '📕',
+        description: 'Register 10 Kanto species as caught.',
+        reward: { balls: ['greatball', 'greatball'] },
+        check: p => kantoCaught(p) >= 10,
+    },
+    {
+        id: 'dex-caught-50', name: 'Dex Scholar', emoji: '📗',
+        description: 'Register 50 Kanto species as caught.',
+        reward: { balls: ['ultraball', 'ultraball'] },
+        check: p => kantoCaught(p) >= 50,
+    },
+    {
+        id: 'dex-caught-100', name: 'Dex Professor', emoji: '📘',
+        description: 'Register 100 Kanto species as caught.',
+        reward: { heldItems: ['leftovers'], balls: ['ultraball'] },
+        check: p => kantoCaught(p) >= 100,
+    },
+    {
+        id: 'dex-caught-151', name: 'Kanto Master', emoji: '🏅',
+        description: 'Complete the Kanto Pokédex — all 151 caught.',
+        reward: { heldItems: ['leftovers'], balls: ['ultraball', 'ultraball', 'ultraball'] },
+        check: p => kantoCaught(p) >= KANTO_DEX_SIZE,
     },
 ];
 

@@ -47,6 +47,8 @@ interface UseBattleResultsOptions {
     towerMode: boolean;
     /** Journey trainer being fought (id in journey.clearedTrainers on win). */
     journeyTrainerId: string | null;
+    /** Replay playback: suppress ALL consequences (XP, records, drops, offers). */
+    replaying: boolean;
     pokemons: Pokemon[];
     profile: PlayerProfile;
     updateProfile: (updater: (prev: PlayerProfile) => PlayerProfile) => void;
@@ -69,6 +71,7 @@ export const useBattleResults = ({
     leagueRematch,
     towerMode,
     journeyTrainerId,
+    replaying,
     pokemons,
     profile,
     updateProfile,
@@ -89,7 +92,8 @@ export const useBattleResults = ({
 
         // Hotseat battles are friendly matches: no XP, records, drops or
         // recruitment (also prevents farming a second local player).
-        if (hotseat) return;
+        // Replays are pure playback — consequences already happened live.
+        if (hotseat || replaying) return;
 
         const won = engine.winner === 1;
         const stats = battleStatsRef.current;
@@ -229,7 +233,7 @@ export const useBattleResults = ({
                 })
                 .catch(() => undefined); // hint is best-effort
         });
-    }, [addLog, battleStatsRef, engine, gauntletStage, leagueStage, leagueRematch, towerMode, journeyTrainerId, hotseat, pokemons, profile, updateProfile]);
+    }, [addLog, battleStatsRef, engine, gauntletStage, leagueStage, leagueRematch, towerMode, journeyTrainerId, hotseat, replaying, pokemons, profile, updateProfile]);
 
     const registerRecruit = useCallback((offer: RecruitOffer) => {
         updateProfile(prev => registerMonProgress(prev, {
@@ -269,7 +273,7 @@ export const useBattleResults = ({
                 const mons = { ...prev.mons };
                 const old = mons[evo.fromId] ?? { xp: 0, level: evo.level };
                 delete mons[evo.fromId];
-                mons[evo.toId] = { xp: old.xp, level: old.level, shiny: old.shiny, elite: old.elite, heldItem: old.heldItem };
+                mons[evo.toId] = { xp: old.xp, level: old.level, shiny: old.shiny, elite: old.elite, heldItem: old.heldItem, nature: old.nature, ivs: old.ivs };
                 return { ...prev, mons };
             });
             onEvolvePokemon(evo.fromId, newPokemon);

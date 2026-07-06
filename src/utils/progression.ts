@@ -2,6 +2,9 @@ import type { Pokemon } from '../types/pokemon';
 import type { Move } from '../data/moves';
 import type { BallId, BallInventory, HeldInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { createInventory } from '../data/items';
+import type { Ivs } from '../data/natures';
+import { rollIvs, rollNature } from '../data/natures';
+import type { Rng } from './battleEngine';
 
 /**
  * Pure progression logic: the persistent player profile, XP curve and
@@ -23,6 +26,10 @@ export interface MonProgress {
     heldItem?: HeldItemId;
     /** Player-picked moveset (≤4) from the Move Manager; unset → auto. */
     customMoves?: Move[];
+    /** Nature id (data/natures.ts), rolled once on first registration. */
+    nature?: string;
+    /** Per-stat IVs 0–31, rolled once on first registration. */
+    ivs?: Ivs;
 }
 
 export interface PlayerRecords {
@@ -57,6 +64,12 @@ export interface LeagueProgress {
     defeatedRematches: string[];
 }
 
+/** Per-species Pokédex registration (national dex ids, unique). */
+export interface DexProgress {
+    seen: number[];
+    caught: number[];
+}
+
 export interface PlayerProfile {
     version: 1;
     /** Per-species progress, keyed by national dex id. */
@@ -77,6 +90,8 @@ export interface PlayerProfile {
         position: string;
         clearedTrainers: string[];
     };
+    /** Seen/caught Pokédex registration. */
+    dex: DexProgress;
 }
 
 export const createProfile = (): PlayerProfile => ({
@@ -90,7 +105,49 @@ export const createProfile = (): PlayerProfile => ({
     balls: { pokeball: 5 },
     achievements: [],
     journey: { started: false, position: 'pallet-town', clearedTrainers: [] },
+    dex: { seen: [], caught: [] },
 });
+
+export const KANTO_DEX_SIZE = 151;
+export const JOHTO_DEX_MAX = 251;
+
+const unionIds = (existing: number[], ids: number[]): number[] => {
+    const set = new Set(existing);
+    let changed = false;
+    for (const id of ids) {
+        if (!set.has(id)) {
+            set.add(id);
+            changed = true;
+        }
+    }
+    return changed ? [...set] : existing;
+};
+
+/** Mark species as seen. Returns the same profile reference when nothing is new. */
+export const registerDexSeen = (profile: PlayerProfile, ids: number[]): PlayerProfile => {
+    const seen = unionIds(profile.dex.seen, ids);
+    return seen === profile.dex.seen ? profile : { ...profile, dex: { ...profile.dex, seen } };
+};
+
+/** Mark species as caught (caught implies seen). Same-reference when nothing is new. */
+export const registerDexCaught = (profile: PlayerProfile, ids: number[]): PlayerProfile => {
+    const caught = unionIds(profile.dex.caught, ids);
+    const seen = unionIds(profile.dex.seen, ids);
+    if (caught === profile.dex.caught && seen === profile.dex.seen) return profile;
+    return { ...profile, dex: { seen, caught } };
+};
+
+export const dexCompletion = (dex: DexProgress) => {
+    const kanto = (ids: number[]) => ids.filter(id => id <= KANTO_DEX_SIZE).length;
+    const johto = (ids: number[]) => ids.filter(id => id > KANTO_DEX_SIZE && id <= JOHTO_DEX_MAX).length;
+    return {
+        kantoSeen: kanto(dex.seen),
+        kantoCaught: kanto(dex.caught),
+        johtoSeen: johto(dex.seen),
+        johtoCaught: johto(dex.caught),
+        hasJohto: johto(dex.seen) > 0 || johto(dex.caught) > 0,
+    };
+};
 
 export const getMonProgress = (profile: PlayerProfile, pokemonId: number): MonProgress =>
     profile.mons[pokemonId] ?? { xp: 0, level: START_LEVEL };
@@ -172,10 +229,11 @@ export const applyBattleXp = (
  */
 export const registerMonProgress = (
     profile: PlayerProfile,
-    entry: { id: number; level: number; shiny?: boolean; elite?: boolean }
+    entry: { id: number; level: number; shiny?: boolean; elite?: boolean },
+    rng: Rng = Math.random
 ): PlayerProfile => {
     const existing = profile.mons[entry.id];
-    return {
+    return registerDexCaught({
         ...profile,
         mons: {
             ...profile.mons,
@@ -185,9 +243,11 @@ export const registerMonProgress = (
                 level: Math.max(existing?.level ?? 0, entry.level),
                 shiny: entry.shiny || existing?.shiny,
                 elite: entry.elite || existing?.elite,
+                nature: existing?.nature ?? rollNature(rng),
+                ivs: existing?.ivs ?? rollIvs(rng),
             },
         },
-    };
+    }, [entry.id]);
 };
 
 export const updateRecords = (records: PlayerRecords, won: boolean): PlayerRecords => {

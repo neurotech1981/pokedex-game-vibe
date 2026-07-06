@@ -41,6 +41,7 @@ import ArrowUpward from '@mui/icons-material/ArrowUpward';
 import ArrowDownward from '@mui/icons-material/ArrowDownward';
 import SearchIcon from '@mui/icons-material/Search';
 import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import StarsIcon from '@mui/icons-material/Stars';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
@@ -54,6 +55,8 @@ import type { QueryFunctionContext } from '@tanstack/react-query';
 import { useDebounce } from 'use-debounce';
 import { TYPE_EFFECTIVENESS } from '../data/typeChart';
 import { usePlayerProfile } from '../hooks/usePlayerProfile';
+import { KANTO_DEX_SIZE, dexCompletion } from '../utils/progression';
+import type { BattleReplay } from '../utils/replay';
 
 interface PokemonStat {
     base_stat: number;
@@ -314,6 +317,8 @@ const Pokemon: React.FC = () => {
     const observer = useRef<IntersectionObserver | undefined>(undefined);
     const POKEMONS_PER_PAGE = 151;
     const [mainTab, setMainTab] = useState(0);
+    // Replay queued from the Trainer Card, consumed by the Battle tab on mount
+    const [pendingReplay, setPendingReplay] = useState<BattleReplay | null>(null);
     // Single owner of the player profile — TeamBuilder and BattleSimulator
     // share this instance so box/XP/held-item changes stay in sync.
     const { profile, updateProfile } = usePlayerProfile();
@@ -1247,6 +1252,14 @@ const Pokemon: React.FC = () => {
                             variant={showMythicals ? 'filled' : 'outlined'}
                             onClick={() => setShowMythicals(!showMythicals)}
                         />
+                        <Tooltip title="Kanto Pokédex completion — catch Pokémon in the Safari, recruit them after battles, or start the Journey">
+                            <Chip
+                                icon={<CatchingPokemonIcon />}
+                                label={`Caught ${dexCompletion(profile.dex).kantoCaught}/${KANTO_DEX_SIZE} · Seen ${dexCompletion(profile.dex).kantoSeen}/${KANTO_DEX_SIZE}`}
+                                variant="outlined"
+                                sx={{ fontWeight: 700 }}
+                            />
+                        </Tooltip>
                     </Paper>
                     {showFavoritesOnly && filteredPokemons.length === 0 && (
                         <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
@@ -1302,19 +1315,32 @@ const Pokemon: React.FC = () => {
                                             <FavoriteBorderIcon />
                                         )}
                                     </IconButton>
-                                    <Typography
-                                        variant="caption"
+                                    <Box
                                         sx={{
                                             position: 'absolute',
                                             top: 12,
                                             left: 14,
-                                            color: 'text.secondary',
-                                            fontWeight: 700,
-                                            letterSpacing: '0.05em',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 0.5,
                                         }}
                                     >
-                                        #{String(pokemon.id).padStart(3, '0')}
-                                    </Typography>
+                                        <Typography
+                                            variant="caption"
+                                            sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: '0.05em' }}
+                                        >
+                                            #{String(pokemon.id).padStart(3, '0')}
+                                        </Typography>
+                                        {profile.dex.caught.includes(pokemon.id) ? (
+                                            <Tooltip title="Caught — registered in your Pokédex">
+                                                <CatchingPokemonIcon sx={{ fontSize: 15, color: '#ef5350' }} />
+                                            </Tooltip>
+                                        ) : profile.dex.seen.includes(pokemon.id) ? (
+                                            <Tooltip title="Seen in battle — not caught yet">
+                                                <VisibilityOutlinedIcon sx={{ fontSize: 15, color: 'text.disabled' }} />
+                                            </Tooltip>
+                                        ) : null}
+                                    </Box>
                                     <CardMedia
                                         component="img"
                                         height="180"
@@ -1457,10 +1483,20 @@ const Pokemon: React.FC = () => {
                     }}
                     profile={profile}
                     updateProfile={updateProfile}
+                    pendingReplay={pendingReplay}
+                    onReplayConsumed={() => setPendingReplay(null)}
                 />
             )}
 
-            {mainTab === 4 && <TrainerCard profile={profile} />}
+            {mainTab === 4 && (
+                <TrainerCard
+                    profile={profile}
+                    onWatchReplay={replay => {
+                        setPendingReplay(replay);
+                        setMainTab(3);
+                    }}
+                />
+            )}
 
             <Modal
                 open={!!selectedPokemon}

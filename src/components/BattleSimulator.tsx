@@ -74,7 +74,7 @@ import FloatingCombatText from './FloatingCombatText';
 import PostBattlePanel from './battle/PostBattlePanel';
 import BattleSetup, { RANDOM_ID } from './battle/BattleSetup';
 import type { PlayerProfile } from '../utils/progression';
-import { getMonProgress, registerMonProgress } from '../utils/progression';
+import { getMonProgress, registerDexSeen, registerMonProgress } from '../utils/progression';
 import {
     GAUNTLET_XP_MULTIPLIER,
     createGauntletStage,
@@ -106,6 +106,10 @@ import type { VsIntroPayload } from './battle/VsIntro';
 import VsIntro from './battle/VsIntro';
 import { useBattleEvents } from '../hooks/useBattleEvents';
 import { useBattleResults } from '../hooks/useBattleResults';
+import type { BattleReplay, ReplayStep } from '../utils/replay';
+import { REPLAY_FORMAT, canPlayReplay, monConfigFrom, saveReplay } from '../utils/replay';
+import { mulberry32, randomSeed } from '../utils/rng';
+import type { Rng } from '../utils/battleEngine';
 import { STATUS_COLORS, STATUS_LABELS, STAT_ABBR, WEATHER_LABELS, capitalize, hpColor } from './battle/battleUi';
 import { getBattleSprites } from '../utils/spriteSources';
 import RecruitOfferCard from './battle/RecruitOfferCard';
@@ -133,6 +137,9 @@ interface Props {
     onCreateTeam: (teamId: string, name: string, pokemon: Pokemon[]) => void;
     profile: PlayerProfile;
     updateProfile: (updater: (prev: PlayerProfile) => PlayerProfile) => void;
+    /** Replay queued from the Trainer Card — played back once, then consumed. */
+    pendingReplay: BattleReplay | null;
+    onReplayConsumed: () => void;
 }
 
 const generateRandomTeam = (pokemons: Pokemon[], size = 6): Team => {
@@ -392,7 +399,7 @@ const TeamRoster: React.FC<{
     </Box>
 );
 
-const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeEffectiveness, onAddPokemonToTeam, onEvolvePokemon, onCreateTeam, profile, updateProfile }) => {
+const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeEffectiveness, onAddPokemonToTeam, onEvolvePokemon, onCreateTeam, profile, updateProfile, pendingReplay, onReplayConsumed }) => {
     const [team1Id, setTeam1Id] = useState<string>(() => localStorage.getItem('battleSimulator_team1') || '');
     const [team2Id, setTeam2Id] = useState<string>(() => localStorage.getItem('battleSimulator_team2') || '');
     const [aiDifficulty, setAIDifficulty] = useState<AIDifficulty>('intermediate');
@@ -430,6 +437,22 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
 
     // Guards async battle start (moveset fetches) against double-clicks
     const [starting, setStarting] = useState(false);
+
+    // ---------- Battle replays ----------
+    // Engine rng: seeded per battle so recorded battles replay identically.
+    // The AI keeps plain Math.random — its picks are recorded as steps, never re-run.
+    const battleRngRef = useRef<Rng>(Math.random);
+    const replayDraftRef = useRef<BattleReplay | null>(null);
+    const replayTaintedRef = useRef(false); // debug weather/terrain used → don't save
+    const replaySavedRef = useRef(false);
+    const [replaying, setReplaying] = useState(false);
+    const replayStepsRef = useRef<ReplayStep[]>([]);
+    const replayIdxRef = useRef(0);
+
+    /** Append a step to the in-flight recording (no-op during playback). */
+    const recordStep = useCallback((step: ReplayStep) => {
+        replayDraftRef.current?.steps.push(step);
+    }, []);
 
     // Opponent mode: AI or a second human sharing the keyboard (hotseat)
     const [opponentKind, setOpponentKind] = useState<'ai' | 'human'>('ai');
@@ -486,6 +509,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         leagueRematch,
         towerMode,
         journeyTrainerId,
+        replaying,
         pokemons,
         profile,
         updateProfile,
@@ -519,45 +543,169 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
 
 
     const runPlayerAction = useCallback((action: BattleAction) => {
-        if (!engine || engine.phase !== 'selecting' || busy) return;
+        if (replaying || !engine || engine.phase !== 'selecting' || busy) return;
         // In hotseat both teams are human; vs AI only team 1 takes input
         if (engine.currentTurn !== 1 && !hotseat) return;
         setBusy(true);
-        processEvents(resolveAction(engine, action, typeEffectiveness));
+        recordStep({ kind: 'action', team: engine.currentTurn, action });
+        processEvents(resolveAction(engine, action, typeEffectiveness, battleRngRef.current));
         setTimeout(() => setBusy(false), paced(1200));
-    }, [busy, engine, hotseat, paced, processEvents, typeEffectiveness]);
+    }, [busy, engine, hotseat, paced, processEvents, recordStep, replaying, typeEffectiveness]);
 
-    // AI turn (never fires in hotseat or under the VS intro)
+    // AI turn (never fires in hotseat, replays or under the VS intro)
     useEffect(() => {
-        if (intro !== null || hotseat || !engine || engine.phase !== 'selecting' || engine.currentTurn !== 2) return;
+        if (intro !== null || hotseat || replaying || !engine || engine.phase !== 'selecting' || engine.currentTurn !== 2) return;
         const timer = setTimeout(() => {
             const action = selectAIAction(engine, typeEffectiveness, aiDifficulty, aiPersonality);
-            processEvents(resolveAction(engine, action, typeEffectiveness));
+            recordStep({ kind: 'action', team: 2, action });
+            processEvents(resolveAction(engine, action, typeEffectiveness, battleRngRef.current));
         }, paced(1500));
         return () => clearTimeout(timer);
-    }, [engine, hotseat, intro, aiDifficulty, aiPersonality, paced, processEvents, typeEffectiveness]);
+    }, [engine, hotseat, intro, replaying, aiDifficulty, aiPersonality, paced, processEvents, recordStep, typeEffectiveness]);
 
-    // AI forced switch (never fires in hotseat or under the VS intro)
+    // AI forced switch (never fires in hotseat, replays or under the VS intro)
     useEffect(() => {
-        if (intro !== null || hotseat || !engine || engine.phase !== 'awaitingSwitch' || engine.pendingSwitch !== 2) return;
+        if (intro !== null || hotseat || replaying || !engine || engine.phase !== 'awaitingSwitch' || engine.pendingSwitch !== 2) return;
         const timer = setTimeout(() => {
             const key = selectAIForcedSwitch(engine, 2, typeEffectiveness);
-            if (key) processEvents(resolveForcedSwitch(engine, key));
+            if (key) {
+                recordStep({ kind: 'forcedSwitch', team: 2, targetKey: key });
+                processEvents(resolveForcedSwitch(engine, key, battleRngRef.current));
+            }
         }, paced(1000));
         return () => clearTimeout(timer);
-    }, [engine, hotseat, intro, paced, processEvents, typeEffectiveness]);
+    }, [engine, hotseat, intro, replaying, paced, processEvents, recordStep, typeEffectiveness]);
+
+    // Save the recording when a battle ends (skipped for tainted/debug battles)
+    useEffect(() => {
+        if (!engine || engine.phase !== 'gameOver' || replaying) return;
+        const draft = replayDraftRef.current;
+        if (!draft || replaySavedRef.current || replayTaintedRef.current) return;
+        replaySavedRef.current = true;
+        saveReplay({ ...draft, winner: engine.winner });
+    }, [engine, replaying]);
+
+    // Replay playback: rebuild both teams from the recorded configs (exact —
+    // stats were snapshotted post-rewrite) and re-run the recorded steps
+    // against the same seeded rng. Fully offline; no consequences fire.
+    const startReplayPlayback = (replay: BattleReplay) => {
+        if (!canPlayReplay(replay)) {
+            addLog('This replay was recorded by an older version and can no longer be played.');
+            return;
+        }
+        const rebuild = (team: TeamId) =>
+            replay.teams[team].map((cfg, i) =>
+                createBattleMon(cfg.pokemon, team, i, cfg.level, cfg.ability, {
+                    shiny: cfg.shiny,
+                    moves: cfg.moves,
+                    heldItem: cfg.heldItem,
+                    currentHpPct: cfg.currentHpPct,
+                })
+            );
+        const team1 = rebuild(1);
+        const team2 = rebuild(2);
+        setOpponentKind('ai');
+        setGauntletStage(null);
+        setLeagueStageId(null);
+        setSafariBiomeId(null);
+        setTowerMode(false);
+        setJourneyTrainerId(null);
+        gauntletHpRef.current = {};
+        setBackdropUrl(backgroundUrl(pickBattleBackgroundId({ rng: Math.random })));
+        battleRngRef.current = mulberry32(replay.seed);
+        replayStepsRef.current = replay.steps;
+        replayIdxRef.current = 0;
+        setReplaying(true);
+        const state = createEngineState(
+            team1,
+            team2,
+            { 1: { ...replay.items[1] }, 2: { ...replay.items[2] } },
+            { wild: replay.wild, balls: replay.balls }
+        );
+        launchBattle(state, `▶️ Replay: ${replay.label}`, {
+            leftLabel: 'Replay',
+            leftSprites: replay.teams[1].map(cfg => getBattleSprites(cfg.pokemon.id).artwork),
+            rightLabel: new Date(replay.date).toLocaleDateString(),
+            rightSubLabel: replay.mode,
+            rightKind: 'ai',
+        }, { replay: true });
+    };
+
+    // Consume a replay queued from the Trainer Card
+    useEffect(() => {
+        if (!pendingReplay) return;
+        onReplayConsumed();
+        startReplayPlayback(pendingReplay);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingReplay]);
+
+    // Replay step driver: feed the next recorded step whenever the engine waits
+    useEffect(() => {
+        if (!replaying || intro !== null || !engine || engine.winner !== null) return;
+        if (engine.phase !== 'selecting' && engine.phase !== 'awaitingSwitch') return;
+        const step = replayStepsRef.current[replayIdxRef.current];
+        const wantsSwitch = engine.phase === 'awaitingSwitch';
+        if (!step || (step.kind === 'forcedSwitch') !== wantsSwitch) {
+            addLog(step ? 'Replay drifted from the recording — playback stopped.' : 'End of recording.');
+            return;
+        }
+        const timer = setTimeout(() => {
+            replayIdxRef.current += 1;
+            if (step.kind === 'action') {
+                processEvents(resolveAction(engine, step.action, typeEffectiveness, battleRngRef.current));
+            } else {
+                processEvents(resolveForcedSwitch(engine, step.targetKey, battleRngRef.current));
+            }
+        }, paced(step.kind === 'forcedSwitch' ? 900 : 1600));
+        return () => clearTimeout(timer);
+    }, [replaying, engine, intro, addLog, paced, processEvents, typeEffectiveness]);
 
     const playerAvgLevel = (t1: Team): number => {
         const levels = t1.pokemon.map(p => getMonProgress(profile, p.id).level);
         return Math.round(levels.reduce((a, b) => a + b, 0) / levels.length);
     };
 
-    const launchBattle = (state: EngineState, openingLog: string, introPayload: VsIntroPayload) => {
+    const launchBattle = (
+        state: EngineState,
+        openingLog: string,
+        introPayload: VsIntroPayload,
+        opts: { replay?: boolean; mode?: string; label?: string } = {}
+    ) => {
         resetEvents();
         resetResults();
         setBusy(true); // locked until the VS intro dismisses
         playSound('battleStart');
         if (musicOn) playMusic('battleTheme');
+        if (opts.replay) {
+            // Playback: rng already seeded from the recording; no dex, no re-recording
+            replayDraftRef.current = null;
+        } else {
+            setReplaying(false);
+            // Every combatant registers as "seen" — fled/lost encounters still count
+            updateProfile(prev => registerDexSeen(prev, Object.values(state.mons).map(m => m.pokemon.id)));
+            // Seed the engine rng and start a replay recording
+            const seed = randomSeed();
+            battleRngRef.current = mulberry32(seed);
+            replayTaintedRef.current = false;
+            replaySavedRef.current = false;
+            replayDraftRef.current = {
+                format: REPLAY_FORMAT,
+                seed,
+                date: new Date().toISOString(),
+                mode: opts.mode ?? 'battle',
+                label: opts.label ?? openingLog,
+                winner: null,
+                hotseat,
+                teams: {
+                    1: state.order[1].map(k => monConfigFrom(state.mons[k])),
+                    2: state.order[2].map(k => monConfigFrom(state.mons[k])),
+                },
+                items: { 1: { ...state.items[1] }, 2: { ...state.items[2] } },
+                wild: state.wild,
+                balls: state.balls ? { ...state.balls } : undefined,
+                steps: [],
+            };
+        }
         addLog(openingLog);
         addLog(`${capitalize(getActiveMon(state, 1).pokemon.name)} and ${capitalize(getActiveMon(state, 2).pokemon.name)} enter the arena!`);
         // Defer beginBattle (speed order, Intimidate, Quick Claw) until after
@@ -575,7 +723,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
             // Both leads call out as they materialize
             playCry(getActiveMon(pending, 1).pokemon.id, 0.8);
             setTimeout(() => playCry(getActiveMon(pending, 2).pokemon.id, 0.8), 650);
-            processEvents(beginBattle(pending));
+            processEvents(beginBattle(pending, battleRngRef.current));
         }
         setTimeout(() => setBusy(false), paced(400));
     }, [paced, processEvents]);
@@ -613,6 +761,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     // Hotseat is a friendly: no held-item edge for player 1
                     heldItem: hotseat ? undefined : progress.heldItem,
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    nature: progress.nature,
+                    ivs: progress.ivs,
                 });
             });
             const team2 = t2.pokemon.map((p, i) => {
@@ -627,6 +777,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     {
                         // Hotseat player 2 gets their custom sets too
                         moves: hotseat && progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                        // ...and their persisted nature/IVs (AI opponents stay neutral)
+                        nature: hotseat ? progress.nature : undefined,
+                        ivs: hotseat ? progress.ivs : undefined,
                     }
                 );
             });
@@ -654,7 +807,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     rightLabel: hotseat ? 'Player 2' : 'AI Trainer',
                     rightSubLabel: hotseat ? t2.name : capitalize(aiDifficulty),
                     rightKind: hotseat ? 'human' : 'ai',
-                }
+                },
+                { mode: hotseat ? 'Hotseat PvP' : 'Quick battle', label: `${t1.name} vs ${hotseat ? t2.name : `AI (${capitalize(aiDifficulty)})`}` }
             );
         } finally {
             setStarting(false);
@@ -679,6 +833,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     statMod: recruitStatMod(progress.elite),
                     heldItem: progress.heldItem,
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    nature: progress.nature,
+                    ivs: progress.ivs,
                 });
             });
             const team2 = stage.opponents.map((o, i) =>
@@ -704,7 +860,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 rightLabel: 'Gauntlet',
                 rightSubLabel: `Stage ${stageIndex}${stage.isBoss ? ' — BOSS' : ''}`,
                 rightKind: 'ai',
-            });
+            }, { mode: 'Gauntlet', label: `Gauntlet stage ${stageIndex}${stage.isBoss ? ' (boss)' : ''}` });
         } finally {
             setStarting(false);
         }
@@ -734,6 +890,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     statMod: recruitStatMod(progress.elite),
                     heldItem: progress.heldItem,
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    nature: progress.nature,
+                    ivs: progress.ivs,
                 });
             });
             const team2 = roster.map((p, i) => {
@@ -763,7 +921,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 rightSubLabel: rematch ? `${stage.title} — Round 2` : stage.title,
                 rightPortrait: trainerPortraitUrl(stage.portrait),
                 rightKind: 'trainer',
-            });
+            }, { mode: 'League', label: `${stage.title} ${stage.name}${rematch ? ' — Round 2' : ''}` });
         } catch {
             setLeagueError('Couldn’t reach PokeAPI to build the trainer’s team — check your connection and retry.');
         } finally {
@@ -814,6 +972,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     statMod: recruitStatMod(progress.elite),
                     heldItem: progress.heldItem,
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    nature: progress.nature,
+                    ivs: progress.ivs,
                 });
             });
             const team2 = roster.map((p, i) =>
@@ -839,7 +999,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 rightLabel: trainer.name,
                 rightSubLabel: `${trainer.title} — ${node.name}`,
                 rightKind: 'ai',
-            });
+            }, { mode: 'Journey', label: `${trainer.title} ${trainer.name} — ${node.name}` });
         } catch {
             addLog('Couldn\u2019t reach PokeAPI to build the trainer\u2019s team \u2014 check your connection and retry.');
         } finally {
@@ -875,6 +1035,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 return createBattleMon(p, 1, i, TOWER_LEVEL, getAbilityForTypes(p.types), {
                     shiny: progress.shiny, // cosmetic only
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    // Nature/IVs are mon identity (like custom moves) — tower keeps them
+                    nature: progress.nature,
+                    ivs: progress.ivs,
                 });
             });
             const team2 = opponents.map((o, i) =>
@@ -904,7 +1067,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 rightLabel: 'Battle Tower',
                 rightSubLabel: `Battle #${battleNumber}${boss ? ' — BOSS' : ''} · everyone at Lv ${TOWER_LEVEL}`,
                 rightKind: 'ai',
-            });
+            }, { mode: 'Battle Tower', label: `Tower battle #${battleNumber}${boss ? ' (boss)' : ''}` });
         } finally {
             setStarting(false);
         }
@@ -932,6 +1095,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     statMod: recruitStatMod(progress.elite),
                     heldItem: progress.heldItem,
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
+                    nature: progress.nature,
+                    ivs: progress.ivs,
                 });
             });
             const wildMon = createBattleMon(
@@ -964,7 +1129,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 rightSubLabel: `${biome.emoji} ${biome.name}`,
                 rightPortrait: getBattleSprites(encounter.pokemon.id, encounter.shiny).artwork,
                 rightKind: 'trainer',
-            });
+            }, { mode: 'Safari', label: `Wild ${capitalize(encounter.pokemon.name)} — ${biome.name}` });
         } finally {
             setStarting(false);
         }
@@ -998,6 +1163,10 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
         setBackdropUrl(null);
         setIntro(null);
         pendingBeginRef.current = null;
+        setReplaying(false);
+        replayDraftRef.current = null;
+        replayStepsRef.current = [];
+        replayIdxRef.current = 0;
     };
 
     const handleSelectMove = (move: Move) => {
@@ -1020,8 +1189,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     };
 
     const handleForcedSwitch = (key: string) => {
-        if (!engine) return;
-        processEvents(resolveForcedSwitch(engine, key));
+        if (!engine || replaying) return;
+        recordStep({ kind: 'forcedSwitch', team: engine.pendingSwitch ?? 1, targetKey: key });
+        processEvents(resolveForcedSwitch(engine, key, battleRngRef.current));
     };
 
     const handleToggleMusic = () => {
@@ -1035,11 +1205,13 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
 
     const handleDebugWeather = (weather: WeatherType) => {
         if (!engine) return;
+        replayTaintedRef.current = true; // debug tampering → this battle won't be saved as a replay
         processEvents(engineSetWeather(engine, weather));
     };
 
     const handleDebugTerrain = (terrain: TerrainType) => {
         if (!engine) return;
+        replayTaintedRef.current = true;
         processEvents(engineSetTerrain(engine, terrain));
     };
 
@@ -1047,11 +1219,13 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
     const activeHumanTeam: TeamId = hotseat && engine ? engine.currentTurn : 1;
     const playerTurn =
         engine !== null &&
+        !replaying &&
         engine.phase === 'selecting' &&
         (engine.currentTurn === 1 || hotseat) &&
         !busy;
     const playerMustSwitch =
         engine !== null &&
+        !replaying &&
         engine.phase === 'awaitingSwitch' &&
         engine.pendingSwitch !== null &&
         (engine.pendingSwitch === 1 || hotseat);
@@ -1410,7 +1584,11 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     <Chip
                         size="small"
                         label={
-                            engine.phase === 'gameOver'
+                            replaying
+                                ? engine.phase === 'gameOver'
+                                    ? '▶️ Replay finished'
+                                    : '▶️ REPLAY — watching a recording'
+                                : engine.phase === 'gameOver'
                                 ? 'Battle over'
                                 : playerMustSwitch
                                     ? hotseat
@@ -1596,8 +1774,37 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 </Box>
             </Drawer>
 
+            {/* Replay finished overlay (no consequences, just a way back) */}
+                {engine.phase === 'gameOver' && replaying && (
+                    <Box
+                        sx={{
+                            position: 'absolute',
+                            inset: 0,
+                            zIndex: 30,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            bgcolor: 'rgba(5, 8, 20, 0.82)',
+                        }}
+                    >
+                        <Paper sx={{ p: 3, textAlign: 'center', maxWidth: 380, mx: 2 }}>
+                            <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>▶️ Replay finished</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                {engine.winner === 1
+                                    ? 'The recorded battle ended in victory.'
+                                    : engine.winner === 2
+                                        ? 'The recorded battle ended in defeat.'
+                                        : 'End of recording.'}
+                            </Typography>
+                            <Button variant="contained" onClick={handleCloseBattle} sx={{ fontWeight: 700 }}>
+                                Back to Battle Setup
+                            </Button>
+                        </Paper>
+                    </Box>
+                )}
+
             {/* Post-battle results overlay (covers the whole battle screen) */}
-                {engine.phase === 'gameOver' && engine.winner !== null && (
+                {engine.phase === 'gameOver' && engine.winner !== null && !replaying && (
                     <PostBattlePanel
                         // Hotseat matches are neutral: always celebrate the winner (gold trophy)
                         winner={hotseat ? 1 : engine.winner}

@@ -31,9 +31,19 @@ A full-featured Pokédex and Pokémon battle game built with React 19, TypeScrip
 
 ### Progression
 - Persistent trainer profile: XP and levels per Pokémon, evolutions, win records
+- **Natures & IVs** — every Pokémon you register rolls one of the 25 classic natures
+  (±10% stat spreads) and per-stat IVs, shown in the Team Builder and felt in battle
+- **Pokédex completion** — seen/caught registration for every species, completion bars
+  on the Trainer Card, badges on the dex grid and completion achievements up to Kanto Master
 - Item and Poké Ball economy from battle drops; held-item collection
 - Recruitment, Box storage, shiny and elite Pokémon
 - Achievements and a Trainer Card
+
+### Replays & save safety
+- **Battle replays** — every finished battle is recorded (deterministic seeded engine);
+  rewatch the last 20 from the Trainer Card with full 3D playback
+- **Save export/import** — download your entire save as JSON and restore it anywhere
+- **Installable PWA** — add it to your home screen; the app shell works offline
 
 Fully responsive — plays great on phones.
 
