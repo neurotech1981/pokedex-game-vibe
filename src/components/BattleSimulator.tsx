@@ -111,7 +111,7 @@ import { REPLAY_FORMAT, canPlayReplay, monConfigFrom, saveReplay } from '../util
 import { mulberry32, randomSeed } from '../utils/rng';
 import type { Rng } from '../utils/battleEngine';
 import { STATUS_COLORS, STATUS_LABELS, STAT_ABBR, WEATHER_LABELS, capitalize, hpColor } from './battle/battleUi';
-import { getBattleSprites } from '../utils/spriteSources';
+import { getBattleSprites, localStaticSprite } from '../utils/spriteSources';
 import RecruitOfferCard from './battle/RecruitOfferCard';
 import EvolutionPrompt from './battle/EvolutionPrompt';
 import {
@@ -388,7 +388,20 @@ const TeamRoster: React.FC<{
                             transition: 'all 0.2s',
                         }}
                     >
-                        <img src={mon.pokemon.image} alt={mon.pokemon.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        <img
+                            src={mon.pokemon.image}
+                            alt={mon.pokemon.name}
+                            onError={e => {
+                                // One-shot local fallback (data-guarded: React's synthetic
+                                // onError refires even after img.onerror = null)
+                                const img = e.target as HTMLImageElement;
+                                const local = localStaticSprite(mon.pokemon.id, 'front');
+                                if (img.dataset.fellBack || !local) return;
+                                img.dataset.fellBack = '1';
+                                img.src = local;
+                            }}
+                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
                         <Box sx={{ position: 'absolute', bottom: 2, left: 4, right: 4, height: 4, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.2)' }}>
                             <Box sx={{ width: `${(mon.currentHp / mon.maxHp) * 100}%`, height: '100%', borderRadius: 2, bgcolor: hpColor(mon.currentHp / mon.maxHp) }} />
                         </Box>

@@ -25,7 +25,7 @@ import type { Pokemon, Team } from '../../types/pokemon';
 import type { AIDifficulty, AIPersonality } from '../../utils/battleAI';
 import type { PlayerRecords } from '../../utils/progression';
 import { getMonProgress, type PlayerProfile } from '../../utils/progression';
-import { getBattleSprites } from '../../utils/spriteSources';
+import { getBattleSprites, localStaticSprite } from '../../utils/spriteSources';
 
 export const RANDOM_ID = '__random__';
 
@@ -129,7 +129,16 @@ const BattleSetup: React.FC<BattleSetupProps> = ({
                             <img
                                 src={getBattleSprites(p.id).artwork}
                                 alt={p.name}
-                                onError={e => { (e.target as HTMLImageElement).src = p.image; }}
+                                onError={e => {
+                                    // One-shot fallback. The guard must be data-driven:
+                                    // React's synthetic onError keeps firing regardless of
+                                    // img.onerror, and re-setting src to the same failing
+                                    // URL restarts the load — an infinite request loop.
+                                    const img = e.target as HTMLImageElement;
+                                    if (img.dataset.fellBack) return;
+                                    img.dataset.fellBack = '1';
+                                    img.src = localStaticSprite(p.id, 'front') ?? p.image;
+                                }}
                                 style={{ width: '90%', height: '90%', objectFit: 'contain' }}
                             />
                         </Box>

@@ -66,6 +66,13 @@ const composeGifFrames = (buffer: ArrayBuffer): { frames: ComposedFrame[]; width
     return { frames, width, height };
 };
 
+/**
+ * If the whole ladder fails (flaky network, CDN throttling a burst of GIF
+ * requests), retry it with backoff instead of leaving the sprite invisible
+ * for the rest of the battle.
+ */
+const RETRY_DELAYS_MS = [1000, 3000, 8000];
+
 export const useAnimatedTexture = (urls: string[]): AnimatedTextureResult => {
     const [result, setResult] = useState<AnimatedTextureResult>({ texture: null, aspect: 1 });
     const playbackRef = useRef<GifPlayback | null>(null);
@@ -74,11 +81,19 @@ export const useAnimatedTexture = (urls: string[]): AnimatedTextureResult => {
     useEffect(() => {
         let cancelled = false;
         let created: THREE.Texture | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
         playbackRef.current = null;
         setResult({ texture: null, aspect: 1 });
 
-        const tryLoad = async (index: number): Promise<void> => {
-            if (cancelled || index >= urls.length) return;
+        const tryLoad = async (index: number, pass = 0): Promise<void> => {
+            if (cancelled) return;
+            if (index >= urls.length) {
+                // Every candidate failed — schedule a fresh pass over the ladder
+                if (pass < RETRY_DELAYS_MS.length) {
+                    retryTimer = setTimeout(() => void tryLoad(0, pass + 1), RETRY_DELAYS_MS[pass]);
+                }
+                return;
+            }
             const url = urls[index];
             try {
                 if (url.toLowerCase().includes('.gif')) {
@@ -113,13 +128,14 @@ export const useAnimatedTexture = (urls: string[]): AnimatedTextureResult => {
                     setResult({ texture, aspect: img.width / img.height });
                 }
             } catch {
-                return tryLoad(index + 1);
+                return tryLoad(index + 1, pass);
             }
         };
 
-        tryLoad(0);
+        void tryLoad(0);
         return () => {
             cancelled = true;
+            clearTimeout(retryTimer);
             playbackRef.current = null;
             created?.dispose();
         };

@@ -7,10 +7,25 @@
  * ladder returned by `spriteFallbacks`.
  */
 
-const CDN = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon';
+// Pinned to a commit SHA (not `master`) so URLs are immutable — caches can
+// hold them forever and files can't move underneath us.
+const SPRITES_SHA = 'b70e1604eb94d37d9040d661dff952caecf93d78';
+const CDN = `https://raw.githubusercontent.com/PokeAPI/sprites/${SPRITES_SHA}/sprites/pokemon`;
 
 /** Gen 5 animated sprites only exist up to Unova (id 649). */
 const GEN5_MAX_ID = 649;
+
+/** Gen 1–2 static sprites bundled in public/assets/sprites (front + back). */
+const LOCAL_MAX_ID = 251;
+
+/**
+ * Bundled static sprite — served from our own origin, so it can't fail on
+ * CDN hiccups. Only gen 1–2 (the Journey/League roster) is bundled.
+ */
+export const localStaticSprite = (id: number, view: 'front' | 'back'): string | null =>
+    id <= LOCAL_MAX_ID
+        ? `${import.meta.env.BASE_URL}assets/sprites/${view === 'back' ? 'back/' : ''}${id}.png`
+        : null;
 
 export interface BattleSprites {
     /** Animated Showdown-style GIF, front view. */
@@ -46,8 +61,10 @@ export const getBattleSprites = (id: number, shiny = false): BattleSprites => {
 };
 
 /**
- * Ordered candidate URLs for a battle sprite: animated first, then static.
- * The final entry is the caller-provided default (PokeAPI front_default).
+ * Ordered candidate URLs for a battle sprite: animated first, then static,
+ * then the bundled local sprite (gen 1–2 — same-origin, cannot fail on CDN
+ * hiccups; shiny mons fall back to the regular local sprite), and finally
+ * the caller-provided default (PokeAPI front_default).
  */
 export const spriteFallbacks = (
     id: number,
@@ -59,5 +76,6 @@ export const spriteFallbacks = (
     const chain = view === 'front'
         ? [sprites.animFront, sprites.gen5Front, sprites.staticFront]
         : [sprites.animBack, sprites.gen5Back, sprites.staticBack];
-    return [...chain.filter((u): u is string => u !== null), defaultImage];
+    return [...chain.filter((u): u is string => u !== null), localStaticSprite(id, view), defaultImage]
+        .filter((u): u is string => u !== null && u !== '');
 };

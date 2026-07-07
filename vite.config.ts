@@ -25,7 +25,7 @@ export default defineConfig({
         // Precache the app shell only — the heavy media (11MB of audio, scene
         // art) is runtime-cached on first use instead.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        globIgnores: ['audio/**', 'sounds/**', 'assets/backgrounds/**', 'assets/particles/**', 'assets/trainers/**'],
+        globIgnores: ['audio/**', 'sounds/**', 'assets/backgrounds/**', 'assets/particles/**', 'assets/trainers/**', 'assets/sprites/**'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
           {
@@ -53,12 +53,13 @@ export default defineConfig({
               url.pathname.includes('/assets/backgrounds/') ||
               url.pathname.includes('/assets/particles/') ||
               url.pathname.includes('/assets/trainers/') ||
+              url.pathname.includes('/assets/sprites/') ||
               url.pathname.includes('/audio/') ||
               url.pathname.includes('/sounds/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'scene-assets',
-              expiration: { maxEntries: 80, maxAgeSeconds: 30 * 24 * 3600 },
+              expiration: { maxEntries: 700, maxAgeSeconds: 30 * 24 * 3600 },
             },
           },
         ],
