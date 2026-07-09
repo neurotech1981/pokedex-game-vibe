@@ -1566,6 +1566,15 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     getTypeColor={getTypeColor}
                     backdrop={backdropUrl}
                 />
+                {/* Soft screen vignette — zero GPU cost, focuses the eye on the arena */}
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        background: 'radial-gradient(ellipse 120% 90% at 50% 42%, transparent 58%, rgba(8,10,22,0.32) 100%)',
+                    }}
+                />
                 {leftMon && (
                     <Box sx={{ position: 'absolute', top: phone ? 6 : 12, left: phone ? 6 : 12 }}>
                         <MonStatusPanel key={leftMon.key} mon={leftMon} align="left" getTypeColor={getTypeColor} dense={phone} />

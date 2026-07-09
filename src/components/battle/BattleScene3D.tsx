@@ -130,13 +130,59 @@ const getRadialTexture = (): THREE.CanvasTexture => {
     return radialTexture;
 };
 
-// Weather mood multiplied onto the backdrop image (white = untouched)
+// Gen-6-style platform disc: solid-ish center with a feathered rim, so the
+// mons visibly stand ON something instead of floating over the backdrop art.
+let platformTexture: THREE.CanvasTexture | null = null;
+const getPlatformTexture = (): THREE.CanvasTexture => {
+    if (!platformTexture) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+            grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+            grad.addColorStop(0.72, 'rgba(255,255,255,0.8)');
+            grad.addColorStop(0.88, 'rgba(255,255,255,0.3)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+        }
+        platformTexture = new THREE.CanvasTexture(canvas);
+    }
+    return platformTexture;
+};
+
+// Inverse radial: transparent center, darkened edge — lays a subtle depth
+// falloff over the backdrop's painted ground without touching its center.
+let groundVignetteTexture: THREE.CanvasTexture | null = null;
+const getGroundVignetteTexture = (): THREE.CanvasTexture => {
+    if (!groundVignetteTexture) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+            grad.addColorStop(0, 'rgba(0,0,0,0)');
+            grad.addColorStop(0.55, 'rgba(0,0,0,0)');
+            grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+        }
+        groundVignetteTexture = new THREE.CanvasTexture(canvas);
+    }
+    return groundVignetteTexture;
+};
+
+// Weather mood multiplied onto the backdrop image (white = untouched).
+// Kept light — mood should come from particles/fog/flash, not crushed art.
 const BACKDROP_WEATHER_TINT: Record<WeatherType, string> = {
     none: '#ffffff',
     sunny: '#fff3dd',
-    rain: '#7d8fb3',
-    sandstorm: '#c2a36b',
-    hail: '#a8c4d8',
+    rain: '#8fa5c9',
+    sandstorm: '#d4b57e',
+    hail: '#b9d3e4',
 };
 
 const BACKDROP_DISTANCE = 20; // along the camera's view axis, behind the enemy
@@ -207,6 +253,8 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
     const ballRef = useRef<THREE.Mesh>(null);
     const flashRef = useRef<THREE.Mesh>(null);
     const flashMatRef = useRef<THREE.MeshBasicMaterial>(null);
+    const shadowRef = useRef<THREE.Mesh>(null);
+    const shadowMatRef = useRef<THREE.MeshBasicMaterial>(null);
     const fxStart = useRef<number>(0);
     const lastFxId = useRef<number>(-1);
     const faintProgress = useRef<number>(0);
@@ -308,11 +356,37 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
         group.rotation.z = -faint * facing * 0.6;
         mat.opacity = 1 - faint * 0.95;
         mat.color.setHex(tint);
+
+        // Ground shadow: a SIBLING of the animated group, pinned to the
+        // ground plane. It slides with lunges/shakes but never bobs — and
+        // shrinks/lightens slightly at the bob apex, which is what sells
+        // the mon as standing on the ground rather than floating.
+        const shadow = shadowRef.current;
+        const shadowMat = shadowMatRef.current;
+        if (shadow && shadowMat) {
+            shadow.position.set(x, 0.02, z);
+            const bob01 = (Math.sin(t * 2 + phase) * 0.07 + 0.07) / 0.14;
+            const shrink = 1 - bob01 * 0.12;
+            shadow.scale.set(scale * 0.72 * shrink, scale * 0.46 * shrink, 1);
+            shadowMat.opacity = 0.4 * spriteScale * (1 - bob01 * 0.25) * (1 - faint);
+        }
     });
 
-    const shadowY = -(scale / 2) + 0.12;
-
     return (
+        <>
+        {/* Ground shadow (kept OUTSIDE the bobbing group; driven per-frame above) */}
+        <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[position[0], 0.02, position[2]]}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial
+                ref={shadowMatRef}
+                map={getRadialTexture()}
+                color="#000000"
+                transparent
+                opacity={0}
+                depthWrite={false}
+                fog={false}
+            />
+        </mesh>
         <group ref={groupRef} position={position}>
             {texture && (
                 <mesh ref={spriteRef} scale={[width, scale, 1]}>
@@ -358,18 +432,8 @@ const PokemonSprite: React.FC<SpriteProps> = ({ mon, position, facing, side, sca
                     depthWrite={false}
                 />
             </mesh>
-            {/* Ground shadow, fading radially */}
-            <mesh position={[0, shadowY, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[1, 0.7, 1]}>
-                <planeGeometry args={[scale * 0.85, scale * 0.85]} />
-                <meshBasicMaterial
-                    map={getRadialTexture()}
-                    color="#000000"
-                    transparent
-                    opacity={isFainted ? 0 : 0.5}
-                    depthWrite={false}
-                />
-            </mesh>
         </group>
+        </>
     );
 };
 
@@ -924,6 +988,88 @@ const WeatherParticles: React.FC<{ weather: WeatherType }> = ({ weather }) => {
     );
 };
 
+// Soft frosted disc each mon stands on (gen-6 battle platforms). Static by
+// design: a lunging mon leaves its platform, the platform doesn't chase it.
+const PlatformDisc: React.FC<{
+    position: [number, number, number];
+    radius: number;
+    terrain: TerrainType;
+    weather: WeatherType;
+}> = ({ position, radius, terrain, weather }) => {
+    const color = useMemo(() => {
+        const base = terrain === 'none'
+            ? new THREE.Color('#e8eef7')
+            : new THREE.Color(TERRAIN_COLORS[terrain]).lerp(new THREE.Color('#ffffff'), 0.45);
+        return base.multiply(new THREE.Color(BACKDROP_WEATHER_TINT[weather]));
+    }, [terrain, weather]);
+    return (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={position} scale={[radius, radius * 0.66, 1]}>
+            <planeGeometry args={[2, 2]} />
+            <meshBasicMaterial
+                map={getPlatformTexture()}
+                color={color}
+                transparent
+                opacity={0.3}
+                depthWrite={false}
+                fog={false}
+                toneMapped={false}
+            />
+        </mesh>
+    );
+};
+
+// Ambient dust motes drifting up through the arena — cheap liveliness for
+// clear-weather battles. Only rendered when no weather particle system runs,
+// so the per-frame particle budget never stacks.
+const DUST_COUNT = 60;
+const DustMotes: React.FC = () => {
+    const pointsRef = useRef<THREE.Points>(null);
+    const seeds = useMemo(() => {
+        const pos = new Float32Array(DUST_COUNT * 3);
+        const phases = new Float32Array(DUST_COUNT);
+        for (let i = 0; i < DUST_COUNT; i++) {
+            const r = Math.sqrt(Math.random()) * 8;
+            const a = Math.random() * Math.PI * 2;
+            pos[i * 3] = Math.cos(a) * r;
+            pos[i * 3 + 1] = Math.random() * 4;
+            pos[i * 3 + 2] = Math.sin(a) * r;
+            phases[i] = Math.random() * Math.PI * 2;
+        }
+        return { pos, phases };
+    }, []);
+
+    useFrame(({ clock }, delta) => {
+        const points = pointsRef.current;
+        if (!points) return;
+        const attr = points.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const arr = attr.array as Float32Array;
+        const t = clock.getElapsedTime();
+        for (let i = 0; i < DUST_COUNT; i++) {
+            arr[i * 3 + 1] += 0.12 * delta;
+            arr[i * 3] += Math.sin(t * 0.6 + seeds.phases[i]) * 0.004;
+            if (arr[i * 3 + 1] > 4) arr[i * 3 + 1] = 0;
+        }
+        attr.needsUpdate = true;
+    });
+
+    return (
+        <points ref={pointsRef}>
+            <bufferGeometry>
+                <bufferAttribute attach="attributes-position" args={[seeds.pos, 3]} />
+            </bufferGeometry>
+            <pointsMaterial
+                color="#fff8e0"
+                size={0.055}
+                transparent
+                opacity={0.35}
+                blending={THREE.AdditiveBlending}
+                depthWrite={false}
+                sizeAttenuation
+            />
+        </points>
+    );
+};
+
 const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weather, terrain, fx, getTypeColor, backdrop = null }) => {
     const fog = WEATHER_FOG[weather];
     const { size } = useThree();
@@ -945,7 +1091,13 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
 
     return (
         <>
-            <fog attach="fog" args={[fog.color, 4, weather === 'sandstorm' ? 14 : 30]} />
+            {/* Fog dulls the sprites (they're the only fog-affected meshes) —
+                over a bright painted backdrop it made mons look darker than
+                the ground they stand on. Keep it only where it IS the look:
+                abstract mode, and the sandstorm haze. */}
+            {(!backdrop || weather === 'sandstorm') && (
+                <fog attach="fog" args={[fog.color, backdrop ? 8 : 4, weather === 'sandstorm' ? (backdrop ? 20 : 14) : 30]} />
+            )}
             <color attach="background" args={[fog.color]} />
             {backdrop ? (
                 // Scene image becomes sky + ground; SkyDome shows while it loads
@@ -954,6 +1106,22 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                 </Suspense>
             ) : (
                 <SkyDome weather={weather} />
+            )}
+            {/* Transparent-center ground vignette: anchors y=0 as a plane the
+                platforms/shadows rest on and adds depth falloff at the edges,
+                without repainting the backdrop's own ground. */}
+            {backdrop && (
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
+                    <circleGeometry args={[11, 48]} />
+                    <meshBasicMaterial
+                        map={getGroundVignetteTexture()}
+                        color="#000000"
+                        transparent
+                        opacity={0.4}
+                        depthWrite={false}
+                        fog={false}
+                    />
+                </mesh>
             )}
             <hemisphereLight args={['#93b4ff', '#1c2c4f', 0.55]} />
             <ambientLight intensity={weather === 'sunny' ? 1.1 : 0.85} color={weather === 'sunny' ? '#ffe0a3' : '#cdd6ff'} />
@@ -988,15 +1156,37 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
                     />
                 </mesh>
             )}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                <ringGeometry args={[3.1, 3.3, 48]} />
-                <meshBasicMaterial color="#ffffff" transparent opacity={backdrop ? 0.08 : 0.14} />
-            </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                <ringGeometry args={[3.3, 3.42, 48]} />
-                <meshBasicMaterial color="#4f8ef7" transparent opacity={backdrop ? 0.1 : 0.2} />
-            </mesh>
+            {/* Arena rings only make sense on the abstract floor — over a 2D
+                backdrop they floated in mid-air; the platforms replace them. */}
+            {!backdrop && (
+                <>
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+                        <ringGeometry args={[3.1, 3.3, 48]} />
+                        <meshBasicMaterial color="#ffffff" transparent opacity={0.14} />
+                    </mesh>
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+                        <ringGeometry args={[3.3, 3.42, 48]} />
+                        <meshBasicMaterial color="#4f8ef7" transparent opacity={0.2} />
+                    </mesh>
+                </>
+            )}
 
+            {leftMon && (
+                <PlatformDisc
+                    position={[playerPos[0], 0.01, playerPos[2]]}
+                    radius={PLAYER_SCALE * 0.62}
+                    terrain={terrain}
+                    weather={weather}
+                />
+            )}
+            {rightMon && (
+                <PlatformDisc
+                    position={[enemyPos[0], 0.01, enemyPos[2]]}
+                    radius={ENEMY_SCALE * 0.62}
+                    terrain={terrain}
+                    weather={weather}
+                />
+            )}
             {leftMon && (
                 <PokemonSprite
                     key={leftMon.key}
@@ -1069,6 +1259,7 @@ const SceneContents: React.FC<BattleScene3DProps> = ({ leftMon, rightMon, weathe
             </Suspense>
 
             <WeatherParticles weather={weather} />
+            {(weather === 'none' || weather === 'sunny') && <DustMotes />}
             <TerrainParticles terrain={terrain} />
 
             {(fx?.isCritical || (fx?.isDamaging && fxOverride?.quake)) && (
