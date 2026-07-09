@@ -1,4 +1,6 @@
 // Sound effects utility using Web Audio API
+import { localCry } from './spriteSources';
+
 let audioContext: AudioContext | null = null;
 let gainNode: GainNode | null = null;
 let isInitialized = false;
@@ -224,6 +226,9 @@ export const getVolume = () => volume;
 const CRY_BASE = 'https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest';
 const cryCache = new Map<number, HTMLAudioElement>();
 
+/** Gen 1–2 cries are bundled (scripts/fetch-assets.sh) — same-origin, no rate limit. */
+const cryUrl = (pokemonId: number) => localCry(pokemonId) ?? `${CRY_BASE}/${pokemonId}.ogg`;
+
 /**
  * Play a Pokémon's cry (send-out, faint, Pokédex button). Best-effort:
  * missing files, blocked autoplay and offline all fail silently.
@@ -232,7 +237,7 @@ export const playCry = (pokemonId: number, volumeScale = 1) => {
   try {
     let audio = cryCache.get(pokemonId);
     if (!audio) {
-      audio = new Audio(`${CRY_BASE}/${pokemonId}.ogg`);
+      audio = new Audio(cryUrl(pokemonId));
       audio.preload = 'auto';
       audio.onerror = () => undefined;
       cryCache.set(pokemonId, audio);

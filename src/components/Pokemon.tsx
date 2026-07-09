@@ -127,6 +127,7 @@ interface EvolutionChain {
         };
     }>;
     pokemon?: {
+        id: number;
         name: string;
         sprites: {
             front_default: string;
@@ -567,6 +568,7 @@ const Pokemon: React.FC = () => {
                     return {
                         ...chain,
                         pokemon: {
+                            id: data.id,
                             name: data.name,
                             sprites: data.sprites,
                             types: data.types,
@@ -655,7 +657,7 @@ const Pokemon: React.FC = () => {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <CardMedia
                         component="img"
-                        image={chain.pokemon?.sprites.front_default}
+                        image={chain.pokemon ? dexSprite(chain.pokemon.id, chain.pokemon.sprites.front_default) : undefined}
                         alt={chain.species.name}
                         sx={{ width: 80, height: 80, objectFit: 'contain' }}
                     />

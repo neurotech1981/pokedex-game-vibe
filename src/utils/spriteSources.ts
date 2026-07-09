@@ -15,17 +15,34 @@ const CDN = `https://raw.githubusercontent.com/PokeAPI/sprites/${SPRITES_SHA}/sp
 /** Gen 5 animated sprites only exist up to Unova (id 649). */
 const GEN5_MAX_ID = 649;
 
-/** Gen 1–2 static sprites bundled in public/assets/sprites (front + back). */
+/**
+ * Gen 1–2 assets bundled in public/assets (fetched by scripts/fetch-assets.sh):
+ * static + animated sprites (front/back, regular/shiny), official artwork and
+ * cries. Everything the Journey/League/Safari/Tower roster needs is served
+ * from our own origin — raw.githubusercontent.com rate-limits per IP, so the
+ * CDN is only a fallback for ids we don't bundle.
+ */
 const LOCAL_MAX_ID = 251;
 
-/**
- * Bundled static sprite — served from our own origin, so it can't fail on
- * CDN hiccups. Only gen 1–2 (the Journey/League roster) is bundled.
- */
+/** Bundled static sprite — same-origin, can't fail on CDN hiccups. */
 export const localStaticSprite = (id: number, view: 'front' | 'back'): string | null =>
     id <= LOCAL_MAX_ID
         ? `${import.meta.env.BASE_URL}assets/sprites/${view === 'back' ? 'back/' : ''}${id}.png`
         : null;
+
+/** Bundled showdown-style animated GIF (regular and shiny variants). */
+export const localAnimSprite = (id: number, view: 'front' | 'back', shiny = false): string | null =>
+    id <= LOCAL_MAX_ID
+        ? `${import.meta.env.BASE_URL}assets/sprites/anim/${view === 'back' ? 'back/' : ''}${shiny ? 'shiny/' : ''}${id}.gif`
+        : null;
+
+/** Bundled official artwork (regular only — shiny artwork stays on the CDN). */
+export const localArtwork = (id: number): string | null =>
+    id <= LOCAL_MAX_ID ? `${import.meta.env.BASE_URL}assets/artwork/${id}.png` : null;
+
+/** Bundled cry audio. */
+export const localCry = (id: number): string | null =>
+    id <= LOCAL_MAX_ID ? `${import.meta.env.BASE_URL}assets/cries/${id}.ogg` : null;
 
 /**
  * Preferred Pokédex list/detail image: the bundled sprite when we have it
@@ -65,15 +82,18 @@ export const getBattleSprites = (id: number, shiny = false): BattleSprites => {
         staticBack: shiny ? `${CDN}/back/shiny/${id}.png` : `${CDN}/back/${id}.png`,
         artwork: shiny
             ? `${CDN}/other/official-artwork/shiny/${id}.png`
-            : `${CDN}/other/official-artwork/${id}.png`,
+            : localArtwork(id) ?? `${CDN}/other/official-artwork/${id}.png`,
     };
 };
 
 /**
  * Ordered candidate URLs for a battle sprite: animated first, then static,
- * then the bundled local sprite (gen 1–2 — same-origin, cannot fail on CDN
- * hiccups; shiny mons fall back to the regular local sprite), and finally
- * the caller-provided default (PokeAPI front_default).
+ * then the caller-provided default (PokeAPI front_default).
+ *
+ * Gen 1–2 ladders are entirely same-origin (bundled animated GIF → bundled
+ * static; shiny animated is bundled too, its static rung falls back to the
+ * regular bundled sprite) — zero CDN requests. Higher ids walk the CDN
+ * ladder: showdown GIF → gen-5 GIF → CDN static.
  */
 export const spriteFallbacks = (
     id: number,
@@ -81,16 +101,15 @@ export const spriteFallbacks = (
     defaultImage: string,
     shiny = false
 ): string[] => {
-    const sprites = getBattleSprites(id, shiny);
+    const localAnim = localAnimSprite(id, view, shiny);
     const local = localStaticSprite(id, view);
-    // The bundled local sprite is the same file as the CDN static rung — when
-    // we have it (and aren't after the shiny variant, which only the CDN has),
-    // skip the CDN copy entirely: one less request, one less 429 when GitHub
-    // is rate-limiting.
-    const staticRung = view === 'front' ? sprites.staticFront : sprites.staticBack;
+    if (localAnim && local) {
+        return [localAnim, local, defaultImage].filter(u => u !== '');
+    }
+    const sprites = getBattleSprites(id, shiny);
     const chain = view === 'front'
-        ? [sprites.animFront, sprites.gen5Front]
-        : [sprites.animBack, sprites.gen5Back];
-    return [...chain.filter((u): u is string => u !== null), ...(local && !shiny ? [] : [staticRung]), local, defaultImage]
+        ? [sprites.animFront, sprites.gen5Front, sprites.staticFront]
+        : [sprites.animBack, sprites.gen5Back, sprites.staticBack];
+    return [...chain.filter((u): u is string => u !== null), defaultImage]
         .filter((u): u is string => u !== null && u !== '');
 };
