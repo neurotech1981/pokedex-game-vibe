@@ -56,6 +56,7 @@ import { useDebounce } from 'use-debounce';
 import { TYPE_EFFECTIVENESS } from '../data/typeChart';
 import { usePlayerProfile } from '../hooks/usePlayerProfile';
 import { KANTO_DEX_SIZE, dexCompletion } from '../utils/progression';
+import { dexSprite } from '../utils/spriteSources';
 import type { BattleReplay } from '../utils/replay';
 
 interface PokemonStat {
@@ -174,7 +175,7 @@ const fetchPokemonDetails = async (id: number) => {
     return {
         id: data.id,
         name: data.name,
-        image: data.sprites.front_default,
+        image: dexSprite(data.id, data.sprites.front_default),
         types: data.types.map((type: { type: { name: string } }) => type.type.name),
         height: data.height / 10,
         weight: data.weight / 10,
@@ -214,7 +215,7 @@ const fetchPokemonList = async (context: QueryFunctionContext) => {
             return {
                 id: details.id,
                 name: details.name,
-                image: details.sprites.front_default,
+                image: dexSprite(details.id, details.sprites.front_default),
                 types: details.types.map((type: { type: { name: string } }) => type.type.name),
                 height: details.height / 10,
                 weight: details.weight / 10,
@@ -409,7 +410,7 @@ const Pokemon: React.FC = () => {
                         return {
                             id: details.id,
                             name: details.name,
-                            image: details.sprites.front_default,
+                            image: dexSprite(details.id, details.sprites.front_default),
                             types: details.types.map((type) => type.type.name),
                             height: details.height / 10,
                             weight: details.weight / 10,

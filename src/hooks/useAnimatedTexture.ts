@@ -127,7 +127,16 @@ export const useAnimatedTexture = (urls: string[]): AnimatedTextureResult => {
                     const img = texture.image as { width: number; height: number };
                     setResult({ texture, aspect: img.width / img.height });
                 }
-            } catch {
+            } catch (err) {
+                // 429 = GitHub is rate-limiting this IP; the remaining CDN
+                // rungs will 429 too. Jump straight to the first same-origin
+                // candidate instead of adding to the pile.
+                if (err instanceof Error && err.message.includes('429')) {
+                    const next = urls.findIndex(
+                        (u, i) => i > index && !u.startsWith('https://raw.githubusercontent.com')
+                    );
+                    if (next !== -1) return tryLoad(next, pass);
+                }
                 return tryLoad(index + 1, pass);
             }
         };

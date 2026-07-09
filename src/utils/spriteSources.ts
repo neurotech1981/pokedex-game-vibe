@@ -27,6 +27,15 @@ export const localStaticSprite = (id: number, view: 'front' | 'back'): string | 
         ? `${import.meta.env.BASE_URL}assets/sprites/${view === 'back' ? 'back/' : ''}${id}.png`
         : null;
 
+/**
+ * Preferred Pokédex list/detail image: the bundled sprite when we have it
+ * (the same file PokeAPI's front_default points at, but served from our own
+ * origin — browsing the list must not burn GitHub rate limit), else the
+ * API-provided image.
+ */
+export const dexSprite = (id: number, apiImage: string): string =>
+    localStaticSprite(id, 'front') ?? apiImage;
+
 export interface BattleSprites {
     /** Animated Showdown-style GIF, front view. */
     animFront: string;
@@ -73,9 +82,15 @@ export const spriteFallbacks = (
     shiny = false
 ): string[] => {
     const sprites = getBattleSprites(id, shiny);
+    const local = localStaticSprite(id, view);
+    // The bundled local sprite is the same file as the CDN static rung — when
+    // we have it (and aren't after the shiny variant, which only the CDN has),
+    // skip the CDN copy entirely: one less request, one less 429 when GitHub
+    // is rate-limiting.
+    const staticRung = view === 'front' ? sprites.staticFront : sprites.staticBack;
     const chain = view === 'front'
-        ? [sprites.animFront, sprites.gen5Front, sprites.staticFront]
-        : [sprites.animBack, sprites.gen5Back, sprites.staticBack];
-    return [...chain.filter((u): u is string => u !== null), localStaticSprite(id, view), defaultImage]
+        ? [sprites.animFront, sprites.gen5Front]
+        : [sprites.animBack, sprites.gen5Back];
+    return [...chain.filter((u): u is string => u !== null), ...(local && !shiny ? [] : [staticRung]), local, defaultImage]
         .filter((u): u is string => u !== null && u !== '');
 };

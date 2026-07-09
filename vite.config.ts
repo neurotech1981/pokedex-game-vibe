@@ -44,7 +44,7 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'pokeapi-cdn',
-              expiration: { maxEntries: 500, maxAgeSeconds: 30 * 24 * 3600 },
+              expiration: { maxEntries: 1000, maxAgeSeconds: 30 * 24 * 3600 },
             },
           },
           {
