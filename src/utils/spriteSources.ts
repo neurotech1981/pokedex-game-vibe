@@ -22,7 +22,7 @@ const GEN5_MAX_ID = 649;
  * from our own origin — raw.githubusercontent.com rate-limits per IP, so the
  * CDN is only a fallback for ids we don't bundle.
  */
-const LOCAL_MAX_ID = 251;
+const LOCAL_MAX_ID = 386;
 
 /** Bundled static sprite — same-origin, can't fail on CDN hiccups. */
 export const localStaticSprite = (id: number, view: 'front' | 'back'): string | null =>
@@ -73,13 +73,15 @@ export interface BattleSprites {
 export const getBattleSprites = (id: number, shiny = false): BattleSprites => {
     const s = shiny ? '/shiny' : '';
     const gen5 = `${CDN}/versions/generation-v/black-white/animated`;
+    // Bundled ids serve everything same-origin (shiny anim included);
+    // only shiny artwork/statics remain CDN-only.
     return {
-        animFront: `${CDN}/other/showdown${s}/${id}.gif`,
-        animBack: `${CDN}/other/showdown/back${s}/${id}.gif`,
+        animFront: localAnimSprite(id, 'front', shiny) ?? `${CDN}/other/showdown${s}/${id}.gif`,
+        animBack: localAnimSprite(id, 'back', shiny) ?? `${CDN}/other/showdown/back${s}/${id}.gif`,
         gen5Front: id <= GEN5_MAX_ID ? `${gen5}${s}/${id}.gif` : null,
         gen5Back: id <= GEN5_MAX_ID ? `${gen5}/back${s}/${id}.gif` : null,
-        staticFront: shiny ? `${CDN}/shiny/${id}.png` : `${CDN}/${id}.png`,
-        staticBack: shiny ? `${CDN}/back/shiny/${id}.png` : `${CDN}/back/${id}.png`,
+        staticFront: shiny ? `${CDN}/shiny/${id}.png` : localStaticSprite(id, 'front') ?? `${CDN}/${id}.png`,
+        staticBack: shiny ? `${CDN}/back/shiny/${id}.png` : localStaticSprite(id, 'back') ?? `${CDN}/back/${id}.png`,
         artwork: shiny
             ? `${CDN}/other/official-artwork/shiny/${id}.png`
             : localArtwork(id) ?? `${CDN}/other/official-artwork/${id}.png`,

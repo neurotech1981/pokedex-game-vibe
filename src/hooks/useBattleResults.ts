@@ -164,6 +164,7 @@ export const useBattleResults = ({
                     defeated: [...league.defeated, leagueStage.id],
                     champion: league.champion || leagueStage.id === 'champion',
                     champion2: league.champion2 || leagueStage.id === 'red',
+                    champion3: league.champion3 || leagueStage.id === 'steven',
                 };
             }
         }

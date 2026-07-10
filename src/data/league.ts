@@ -176,6 +176,84 @@ export const LEAGUE_STAGES: LeagueStage[] = [
         typeTheme: 'mixed', backdropId: 'icecave', levelFloor: 100, difficulty: 'expert', personality: 'balanced',
         team: mons([25, 0, 'quickClaw'], [196], [143, 0, 'leftovers'], [3], [6, 0, 'charcoal'], [9, 0, 'mysticWater']),
     },
+
+    // ------------------------- Hoenn (post-Red) -----------------------------
+    // Unlocks after beating Red. Every stage fights at the level-100 ceiling
+    // (Red already sits on it) — difficulty comes from expert AI, held items
+    // and deeper teams, not level growth.
+    {
+        id: 'roxanne', kind: 'gym', name: 'Roxanne', title: 'Rustboro Gym Leader', portrait: 'roxanne',
+        typeTheme: 'rock', backdropId: 'earthycave', levelFloor: 100, difficulty: 'expert', personality: 'defensive',
+        team: mons([74], [346], [299, 0, 'leftovers']),
+        badge: { name: 'Stone Badge', emoji: '🗿', color: '#8d6e63' },
+    },
+    {
+        id: 'brawly', kind: 'gym', name: 'Brawly', title: 'Dewford Gym Leader', portrait: 'brawly',
+        typeTheme: 'fighting', backdropId: 'beach', levelFloor: 100, difficulty: 'expert', personality: 'aggressive',
+        team: mons([296], [66], [297, 0, 'focusSash']),
+        badge: { name: 'Knuckle Badge', emoji: '👊', color: '#ef9a9a' },
+    },
+    {
+        id: 'wattson', kind: 'gym', name: 'Wattson', title: 'Mauville Gym Leader', portrait: 'wattson',
+        typeTheme: 'electric', backdropId: 'city', levelFloor: 100, difficulty: 'expert', personality: 'balanced',
+        team: mons([309], [82, 0, 'magnet'], [310, 0, 'quickClaw']),
+        badge: { name: 'Dynamo Badge', emoji: '⚡', color: '#ffd54f' },
+    },
+    {
+        id: 'flannery', kind: 'gym', name: 'Flannery', title: 'Lavaridge Gym Leader', portrait: 'flannery',
+        typeTheme: 'fire', backdropId: 'orasdesert', levelFloor: 100, difficulty: 'expert', personality: 'aggressive',
+        team: mons([218], [323], [324, 0, 'charcoal']),
+        badge: { name: 'Heat Badge', emoji: '🔥', color: '#ff7043' },
+    },
+    {
+        id: 'norman', kind: 'gym', name: 'Norman', title: 'Petalburg Gym Leader', portrait: 'norman',
+        typeTheme: 'normal', backdropId: 'meadow', levelFloor: 100, difficulty: 'expert', personality: 'balanced',
+        team: mons([327], [288], [289, 0, 'leftovers']),
+        badge: { name: 'Balance Badge', emoji: '⚖️', color: '#f5f5f5' },
+    },
+    {
+        id: 'winona', kind: 'gym', name: 'Winona', title: 'Fortree Gym Leader', portrait: 'winona',
+        typeTheme: 'flying', backdropId: 'skypillar', levelFloor: 100, difficulty: 'expert', personality: 'balanced',
+        team: mons([277], [279], [227], [334, 0, 'leftovers']),
+        badge: { name: 'Feather Badge', emoji: '🪶', color: '#90caf9' },
+    },
+    {
+        id: 'tateandliza', kind: 'gym', name: 'Tate & Liza', title: 'Mossdeep Gym Leaders', portrait: 'tateandliza',
+        typeTheme: 'psychic', backdropId: 'darkmeadow', levelFloor: 100, difficulty: 'expert', personality: 'defensive',
+        team: mons([337], [338, 0, 'quickClaw']),
+        badge: { name: 'Mind Badge', emoji: '🔮', color: '#b39ddb' },
+    },
+    {
+        id: 'wallace', kind: 'gym', name: 'Wallace', title: 'Sootopolis Gym Leader', portrait: 'wallace',
+        typeTheme: 'water', backdropId: 'deepsea', levelFloor: 100, difficulty: 'expert', personality: 'defensive',
+        team: mons([370], [340], [364], [350, 0, 'mysticWater']),
+        badge: { name: 'Rain Badge', emoji: '💧', color: '#4fc3f7' },
+    },
+    {
+        id: 'sidney', kind: 'elite4', name: 'Sidney', title: 'Elite Four', portrait: 'sidney',
+        typeTheme: 'dark', backdropId: 'darkmeadow', levelFloor: 100, difficulty: 'expert', personality: 'aggressive',
+        team: mons([262], [332], [275], [359, 0, 'focusSash']),
+    },
+    {
+        id: 'phoebe', kind: 'elite4', name: 'Phoebe', title: 'Elite Four', portrait: 'phoebe',
+        typeTheme: 'ghost', backdropId: 'dampcave', levelFloor: 100, difficulty: 'expert', personality: 'defensive',
+        team: mons([302], [354], [356, 0, 'leftovers']),
+    },
+    {
+        id: 'glacia', kind: 'elite4', name: 'Glacia', title: 'Elite Four', portrait: 'glacia',
+        typeTheme: 'ice', backdropId: 'icecave', levelFloor: 100, difficulty: 'expert', personality: 'defensive',
+        team: mons([364], [362], [365, 0, 'leftovers']),
+    },
+    {
+        id: 'drake', kind: 'elite4', name: 'Drake', title: 'Elite Four', portrait: 'drake',
+        typeTheme: 'dragon', backdropId: 'elite4drake', levelFloor: 100, difficulty: 'expert', personality: 'aggressive',
+        team: mons([372], [330], [334], [373, 0, 'quickClaw']),
+    },
+    {
+        id: 'steven', kind: 'champion', name: 'Steven', title: 'Hoenn Champion', portrait: 'steven',
+        typeTheme: 'steel', backdropId: 'earthycave', levelFloor: 100, difficulty: 'expert', personality: 'balanced',
+        team: mons([227], [344], [346], [348], [306, 0, 'focusSash'], [376, 0, 'quickClaw']),
+    },
 ];
 
 /** Stage ids belonging to the Johto post-game (require Kanto champion). */
@@ -185,9 +263,20 @@ export const JOHTO_STAGE_IDS = new Set([
 export const JOHTO_STAGES = LEAGUE_STAGES.filter(s => JOHTO_STAGE_IDS.has(s.id));
 export const JOHTO_GYM_STAGES = JOHTO_STAGES.filter(s => s.kind === 'gym');
 
+/** Stage ids belonging to the Hoenn expansion (require beating Red). */
+export const HOENN_STAGE_IDS = new Set([
+    'roxanne', 'brawly', 'wattson', 'flannery', 'norman', 'winona', 'tateandliza', 'wallace',
+    'sidney', 'phoebe', 'glacia', 'drake', 'steven',
+]);
+export const HOENN_STAGES = LEAGUE_STAGES.filter(s => HOENN_STAGE_IDS.has(s.id));
+export const HOENN_GYM_STAGES = HOENN_STAGES.filter(s => s.kind === 'gym');
+
 const KIND_LEVEL_OFFSET: Record<LeagueStage['kind'], number> = { gym: 1, elite4: 3, champion: 5 };
 
-export const GYM_STAGES = LEAGUE_STAGES.filter(s => s.kind === 'gym' && !JOHTO_STAGE_IDS.has(s.id));
+/** Kanto gyms only (Round-2 rematches stay Kanto). */
+export const GYM_STAGES = LEAGUE_STAGES.filter(
+    s => s.kind === 'gym' && !JOHTO_STAGE_IDS.has(s.id) && !HOENN_STAGE_IDS.has(s.id)
+);
 
 export const getLeagueStage = (id: string): LeagueStage | undefined =>
     LEAGUE_STAGES.find(s => s.id === id);

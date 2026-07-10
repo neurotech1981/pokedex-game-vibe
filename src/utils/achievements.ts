@@ -1,7 +1,7 @@
 import type { BallId, HeldItemId, ItemId } from '../data/items';
 import type { PlayerProfile } from './progression';
 import { KANTO_DEX_SIZE, addBalls, addHeldItems, addItems } from './progression';
-import { GYM_STAGES, JOHTO_GYM_STAGES } from '../data/league';
+import { GYM_STAGES, HOENN_GYM_STAGES, JOHTO_GYM_STAGES } from '../data/league';
 
 const kantoCaught = (p: PlayerProfile): number => p.dex.caught.filter(id => id <= KANTO_DEX_SIZE).length;
 
@@ -95,6 +95,18 @@ export const ACHIEVEMENTS: Achievement[] = [
         description: 'Defeat Red at Mt. Silver — the true ending.',
         reward: { coins: 500, heldItems: ['leftovers'], balls: ['ultraball', 'ultraball', 'ultraball'] },
         check: p => p.league.champion2,
+    },
+    {
+        id: 'hoenn-badges-8', name: 'Hoenn Voyager', emoji: '🌋',
+        description: 'Earn all 8 Hoenn gym badges.',
+        reward: { coins: 250, balls: ['ultraball', 'ultraball'] },
+        check: p => HOENN_GYM_STAGES.every(s => p.league.defeated.includes(s.id)),
+    },
+    {
+        id: 'champion-steven', name: 'Stone Collector', emoji: '💎',
+        description: 'Defeat Steven — Champion of the Hoenn League.',
+        reward: { coins: 500, heldItems: ['focusSash'], balls: ['ultraball', 'ultraball', 'ultraball'] },
+        check: p => Boolean(p.league.champion3),
     },
     {
         id: 'gauntlet-10', name: 'Gauntlet Runner', emoji: '🏃',

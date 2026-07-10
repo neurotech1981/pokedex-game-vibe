@@ -9,7 +9,7 @@ import type { BattleReplay } from '../utils/replay';
 import { deleteReplay, loadReplays } from '../utils/replay';
 import { applyFullSave, buildFullSave, parseFullSave } from '../utils/saveData';
 import type { PlayerProfile } from '../utils/progression';
-import { KANTO_DEX_SIZE, JOHTO_DEX_MAX, dexCompletion } from '../utils/progression';
+import { KANTO_DEX_SIZE, JOHTO_DEX_MAX, HOENN_DEX_MAX, dexCompletion } from '../utils/progression';
 import { ACHIEVEMENTS } from '../utils/achievements';
 import { GYM_STAGES, JOHTO_GYM_STAGES } from '../data/league';
 import { BALLS, BALL_IDS } from '../data/items';
@@ -131,6 +131,12 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile, onWatchReplay }) => 
                     <>
                         <DexRow label="Johto — seen" count={dex.johtoSeen} total={JOHTO_DEX_MAX - KANTO_DEX_SIZE} color="#4f8ef7" />
                         <DexRow label="Johto — caught" count={dex.johtoCaught} total={JOHTO_DEX_MAX - KANTO_DEX_SIZE} color="#66bb6a" />
+                    </>
+                )}
+                {dex.hasHoenn && (
+                    <>
+                        <DexRow label="Hoenn — seen" count={dex.hoennSeen} total={HOENN_DEX_MAX - JOHTO_DEX_MAX} color="#4f8ef7" />
+                        <DexRow label="Hoenn — caught" count={dex.hoennCaught} total={HOENN_DEX_MAX - JOHTO_DEX_MAX} color="#66bb6a" />
                     </>
                 )}
                 <Typography variant="caption" color="text.secondary">

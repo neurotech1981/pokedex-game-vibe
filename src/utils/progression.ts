@@ -66,6 +66,8 @@ export interface LeagueProgress {
     champion: boolean;
     /** Beat Red at Mt. Silver — the true ending. */
     champion2: boolean;
+    /** Beat Steven — Hoenn Champion. */
+    champion3?: boolean;
     /** Gym ids beaten again in post-game Round 2 rematches. */
     defeatedRematches: string[];
 }
@@ -115,7 +117,7 @@ export const createProfile = (): PlayerProfile => ({
     heldItems: {},
     records: { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, totalBattles: 0, gauntletBestStage: 0, caught: 0, towerStreak: 0, towerBestStreak: 0 },
     box: [],
-    league: { defeated: [], champion: false, champion2: false, defeatedRematches: [] },
+    league: { defeated: [], champion: false, champion2: false, champion3: false, defeatedRematches: [] },
     balls: { pokeball: 5 },
     achievements: [],
     journey: { started: false, position: 'pallet-town', clearedTrainers: [] },
@@ -126,6 +128,7 @@ export const createProfile = (): PlayerProfile => ({
 
 export const KANTO_DEX_SIZE = 151;
 export const JOHTO_DEX_MAX = 251;
+export const HOENN_DEX_MAX = 386;
 
 const unionIds = (existing: number[], ids: number[]): number[] => {
     const set = new Set(existing);
@@ -156,12 +159,16 @@ export const registerDexCaught = (profile: PlayerProfile, ids: number[]): Player
 export const dexCompletion = (dex: DexProgress) => {
     const kanto = (ids: number[]) => ids.filter(id => id <= KANTO_DEX_SIZE).length;
     const johto = (ids: number[]) => ids.filter(id => id > KANTO_DEX_SIZE && id <= JOHTO_DEX_MAX).length;
+    const hoenn = (ids: number[]) => ids.filter(id => id > JOHTO_DEX_MAX && id <= HOENN_DEX_MAX).length;
     return {
         kantoSeen: kanto(dex.seen),
         kantoCaught: kanto(dex.caught),
         johtoSeen: johto(dex.seen),
         johtoCaught: johto(dex.caught),
         hasJohto: johto(dex.seen) > 0 || johto(dex.caught) > 0,
+        hoennSeen: hoenn(dex.seen),
+        hoennCaught: hoenn(dex.caught),
+        hasHoenn: hoenn(dex.seen) > 0 || hoenn(dex.caught) > 0,
     };
 };
 

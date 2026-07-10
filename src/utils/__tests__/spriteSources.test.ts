@@ -20,17 +20,17 @@ describe('sprite sources', () => {
         });
     });
 
-    it('bundles local assets for gen 1–2 only', () => {
+    it('bundles local assets for gen 1–3 only', () => {
         expect(localStaticSprite(1, 'front')).toContain('assets/sprites/1.png');
-        expect(localStaticSprite(251, 'back')).toContain('assets/sprites/back/251.png');
+        expect(localStaticSprite(386, 'back')).toContain('assets/sprites/back/386.png');
         expect(localAnimSprite(25, 'front')).toContain('assets/sprites/anim/25.gif');
-        expect(localAnimSprite(25, 'back', true)).toContain('assets/sprites/anim/back/shiny/25.gif');
-        expect(localArtwork(151)).toContain('assets/artwork/151.png');
-        expect(localCry(6)).toContain('assets/cries/6.ogg');
-        expect(localStaticSprite(252, 'front')).toBeNull();
-        expect(localAnimSprite(252, 'front')).toBeNull();
-        expect(localArtwork(252)).toBeNull();
-        expect(localCry(252)).toBeNull();
+        expect(localAnimSprite(373, 'back', true)).toContain('assets/sprites/anim/back/shiny/373.gif');
+        expect(localArtwork(386)).toContain('assets/artwork/386.png');
+        expect(localCry(300)).toContain('assets/cries/300.ogg');
+        expect(localStaticSprite(387, 'front')).toBeNull();
+        expect(localAnimSprite(387, 'front')).toBeNull();
+        expect(localArtwork(387)).toBeNull();
+        expect(localCry(387)).toBeNull();
     });
 
     it('gen 1–2 ladder is fully same-origin: anim → static → default', () => {

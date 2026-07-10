@@ -20,6 +20,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import type { LeagueStage } from '../../data/league';
 import {
     GYM_STAGES,
+    HOENN_GYM_STAGES,
     JOHTO_GYM_STAGES,
     LEAGUE_STAGES,
     REMATCH_LEVEL_BONUS,
@@ -111,6 +112,32 @@ const LeagueCard: React.FC<LeagueCardProps> = ({ league, stageLevel, starting, d
                     })}
                     {league.champion2 && (
                         <Chip label="🔴 RED DEFEATED" size="small" sx={{ fontWeight: 700, bgcolor: '#ef5350', color: '#fff' }} />
+                    )}
+                </Box>
+            )}
+
+            {/* Hoenn badge case (unlocks after Red) */}
+            {league.champion2 && (
+                <Box sx={{ display: 'flex', gap: 0.75, mt: 0.75, flexWrap: 'wrap' }}>
+                    {HOENN_GYM_STAGES.map(stage => {
+                        const earned = league.defeated.includes(stage.id);
+                        return (
+                            <Tooltip key={stage.id} title={`${stage.badge!.name} — ${stage.name} (Hoenn)`}>
+                                <Chip
+                                    label={`${stage.badge!.emoji} ${stage.badge!.name.replace(' Badge', '')}`}
+                                    size="small"
+                                    sx={{
+                                        fontWeight: 700,
+                                        bgcolor: earned ? stage.badge!.color : 'rgba(255,255,255,0.06)',
+                                        color: earned ? '#1a1a2e' : 'text.disabled',
+                                        opacity: earned ? 1 : 0.55,
+                                    }}
+                                />
+                            </Tooltip>
+                        );
+                    })}
+                    {league.champion3 && (
+                        <Chip label="💎 STEVEN DEFEATED" size="small" sx={{ fontWeight: 700, bgcolor: '#80cbc4', color: '#1a1a2e' }} />
                     )}
                 </Box>
             )}

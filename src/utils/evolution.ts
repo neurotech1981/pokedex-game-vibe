@@ -1,4 +1,5 @@
 import type { Pokemon } from '../types/pokemon';
+import { dexSprite } from './spriteSources';
 
 /**
  * Level-up evolution: walk the PokeAPI evolution chain for a species and
@@ -100,7 +101,7 @@ export const fetchPokemonById = async (id: number): Promise<Pokemon> => {
     return {
         id: data.id,
         name: data.name,
-        image: data.sprites.front_default,
+        image: dexSprite(data.id, data.sprites.front_default),
         types: data.types.map((t: { type: { name: string } }) => t.type.name),
         height: data.height / 10,
         weight: data.weight / 10,

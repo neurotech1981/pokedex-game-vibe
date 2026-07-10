@@ -19,7 +19,7 @@ set -euo pipefail
 
 # Keep in sync with SPRITES_SHA in src/utils/spriteSources.ts
 SPRITES_SHA="b70e1604eb94d37d9040d661dff952caecf93d78"
-MAX_ID=251
+MAX_ID=386
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
