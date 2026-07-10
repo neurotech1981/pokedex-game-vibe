@@ -73,6 +73,7 @@ import MoveSelection from './battle/MoveSelection';
 import FloatingCombatText from './FloatingCombatText';
 import PostBattlePanel from './battle/PostBattlePanel';
 import BattleSetup, { RANDOM_ID } from './battle/BattleSetup';
+import ModeTile from './battle/ModeTile';
 import type { PlayerProfile } from '../utils/progression';
 import { getMonProgress, registerDexSeen, registerMonProgress } from '../utils/progression';
 import {
@@ -1280,56 +1281,36 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                 onOpponentKindChange={setOpponentKind}
             
                 journeyCard={
-                    <>
-                <Paper sx={{ p: 2.5, border: '1px solid rgba(255, 215, 0, 0.35)' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                                <Typography sx={{ fontSize: 32 }}>🗺️</Typography>
-                                <Box sx={{ flexGrow: 1, minWidth: 240 }}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#ffd700' }}>
-                                        Kanto Journey
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {profile.journey.started
-                                            ? `Currently at ${getJourneyNode(profile.journey.position)?.name ?? 'Pallet Town'} — ${JOURNEY_NODES.filter(n => isNodeComplete(n, profile.journey, profile.league)).length}/${JOURNEY_NODES.length} locations cleared.`
-                                            : 'The adventure mode: pick a starter, travel from Pallet Town to the Indigo Plateau, battle trainers, catch wild Pokémon and take on the gyms along the way.'}
-                                    </Typography>
-                                </Box>
-                                <Button
-                                    variant="contained"
-                                    sx={{ bgcolor: '#ffd700', color: '#1a1a2e', fontWeight: 700, '&:hover': { bgcolor: '#e6c200' } }}
-                                    disabled={pokemons.length === 0}
-                                    onClick={() => setJourneyOpen(true)}
-                                >
-                                    {profile.journey.started ? 'Continue Journey' : 'Begin Journey'}
-                                </Button>
-                            </Box>
-                        </Paper>
-                    </>
+                    <ModeTile
+                        backdropId="meadow"
+                        accent="#ffd700"
+                        wide
+                        delay={0.15}
+                        icon={<Typography sx={{ fontSize: 32, lineHeight: 1 }}>🗺️</Typography>}
+                        title="Kanto Journey"
+                        description={profile.journey.started
+                            ? `Currently at ${getJourneyNode(profile.journey.position)?.name ?? 'Pallet Town'}.`
+                            : 'The adventure mode: pick a starter, travel from Pallet Town to the Indigo Plateau, battle trainers, catch wild Pokémon and take on the gyms along the way.'}
+                        stat={profile.journey.started ? (
+                            <Chip
+                                size="small"
+                                label={`${JOURNEY_NODES.filter(n => isNodeComplete(n, profile.journey, profile.league)).length}/${JOURNEY_NODES.length} locations`}
+                                sx={{ bgcolor: 'rgba(255, 215, 0, 0.12)', color: '#ffd700', fontWeight: 700 }}
+                            />
+                        ) : undefined}
+                        action={
+                            <Button
+                                variant="contained"
+                                sx={{ bgcolor: '#ffd700', color: '#1a1a2e', fontWeight: 700, '&:hover': { bgcolor: '#e6c200' } }}
+                                disabled={pokemons.length === 0}
+                                onClick={() => setJourneyOpen(true)}
+                            >
+                                {profile.journey.started ? 'Continue Journey' : 'Begin Journey'}
+                            </Button>
+                        }
+                    />
                 }
             >
-                <Paper sx={{ p: 2.5, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <WhatshotIcon sx={{ fontSize: 36, color: '#ff8a65' }} />
-                    <Box sx={{ flexGrow: 1, minWidth: 260 }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#ff8a65' }}>
-                            Gauntlet Mode
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Take your team through an endless run of escalating battles. HP carries over
-                            between stages, every 3rd stage is a boss with an elite Pokémon, and all XP
-                            is boosted ×{GAUNTLET_XP_MULTIPLIER}. How deep can you go?
-                        </Typography>
-                    </Box>
-                    <Button
-                        variant="contained"
-                        color="warning"
-                        disabled={starting || !team1Id || pokemons.length === 0}
-                        onClick={handleStartGauntlet}
-                        startIcon={<WhatshotIcon />}
-                        sx={{ whiteSpace: 'nowrap' }}
-                    >
-                        {starting ? 'Preparing…' : 'Start Gauntlet'}
-                    </Button>
-                </Paper>
                 <LeagueCard
                     league={profile.league}
                     stageLevel={stage => {
@@ -1341,19 +1322,42 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     error={leagueError}
                     onChallenge={(stage, rematch) => void startLeagueStage(stage, rematch)}
                 />
-                <Paper sx={{ p: 2.5 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                        <Typography sx={{ fontSize: 32 }}>🧭</Typography>
-                        <Box sx={{ flexGrow: 1, minWidth: 240 }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#81c784' }}>
-                                Safari Expedition
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Explore a biome, battle a wild Pokémon, weaken it and throw
-                                Poké Balls to catch it. Rare and shiny encounters await.
-                            </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 0.75 }}>
+                <ModeTile
+                    backdropId="darkmeadow"
+                    accent="#ff8a65"
+                    delay={0.25}
+                    icon={<WhatshotIcon sx={{ fontSize: 32, color: '#ff8a65' }} />}
+                    title="Gauntlet"
+                    description={`An endless run of escalating battles. HP carries over between stages, every 3rd stage is a boss with an elite Pokémon, and all XP is boosted ×${GAUNTLET_XP_MULTIPLIER}. How deep can you go?`}
+                    stat={profile.records.gauntletBestStage > 0 ? (
+                        <Chip
+                            size="small"
+                            label={`Best: stage ${profile.records.gauntletBestStage}`}
+                            sx={{ bgcolor: 'rgba(255, 138, 101, 0.15)', color: '#ff8a65', fontWeight: 700 }}
+                        />
+                    ) : undefined}
+                    action={
+                        <Button
+                            variant="contained"
+                            color="warning"
+                            disabled={starting || !team1Id || pokemons.length === 0}
+                            onClick={handleStartGauntlet}
+                            startIcon={<WhatshotIcon />}
+                            sx={{ whiteSpace: 'nowrap' }}
+                        >
+                            {starting ? 'Preparing…' : 'Start Gauntlet'}
+                        </Button>
+                    }
+                />
+                <ModeTile
+                    backdropId="forest"
+                    accent="#81c784"
+                    delay={0.3}
+                    icon={<Typography sx={{ fontSize: 32, lineHeight: 1 }}>🧭</Typography>}
+                    title="Safari Expedition"
+                    description="Explore a biome, battle a wild Pokémon, weaken it and throw Poké Balls to catch it. Rare and shiny encounters await."
+                    stat={
+                        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
                             {BALL_IDS.map(id => (
                                 <Chip
                                     key={id}
@@ -1363,9 +1367,9 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                 />
                             ))}
                         </Box>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1.5, mt: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <FormControl size="small" sx={{ minWidth: 220 }}>
+                    }
+                    controls={
+                        <FormControl size="small" sx={{ minWidth: 220, maxWidth: '100%' }}>
                             <InputLabel>Biome</InputLabel>
                             <Select value={selectedBiomeId} label="Biome" onChange={e => setSelectedBiomeId(e.target.value)}>
                                 {BIOMES.map(b => (
@@ -1375,6 +1379,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                                 ))}
                             </Select>
                         </FormControl>
+                    }
+                    action={
                         <Button
                             variant="contained"
                             color="success"
@@ -1386,28 +1392,23 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         >
                             {starting ? 'Preparing…' : 'Explore'}
                         </Button>
-                    </Box>
-                </Paper>
-                <Paper sx={{ p: 2.5 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                        <Typography sx={{ fontSize: 32 }}>🗼</Typography>
-                        <Box sx={{ flexGrow: 1, minWidth: 240 }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#90caf9' }}>
-                                Battle Tower
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                A pure-skill streak ladder: everyone fights at Lv {TOWER_LEVEL}, no held
-                                items, expert AI. Every 7th battle is a boss. How far can you climb?
-                            </Typography>
-                        </Box>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h6" sx={{ fontWeight: 800, color: '#90caf9' }}>
-                                {profile.records.towerStreak}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                streak · best {profile.records.towerBestStreak}
-                            </Typography>
-                        </Box>
+                    }
+                />
+                <ModeTile
+                    backdropId="skypillar"
+                    accent="#90caf9"
+                    delay={0.35}
+                    icon={<Typography sx={{ fontSize: 32, lineHeight: 1 }}>🗼</Typography>}
+                    title="Battle Tower"
+                    description={`A pure-skill streak ladder: everyone fights at Lv ${TOWER_LEVEL}, no held items, expert AI. Every 7th battle is a boss. How far can you climb?`}
+                    stat={
+                        <Chip
+                            size="small"
+                            label={`Streak ${profile.records.towerStreak} · best ${profile.records.towerBestStreak}`}
+                            sx={{ bgcolor: 'rgba(144, 202, 249, 0.15)', color: '#90caf9', fontWeight: 700 }}
+                        />
+                    }
+                    action={
                         <Button
                             variant="contained"
                             sx={{ bgcolor: '#90caf9', color: '#1a1a2e', fontWeight: 700, '&:hover': { bgcolor: '#64b5f6' } }}
@@ -1416,8 +1417,8 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         >
                             {starting ? 'Preparing…' : `Battle #${profile.records.towerStreak + 1}`}
                         </Button>
-                    </Box>
-                </Paper>
+                    }
+                />
             </BattleSetup>
             <JourneyMap
                 open={journeyOpen}

@@ -28,6 +28,10 @@ import {
     trainerPortraitUrl,
 } from '../../data/league';
 import type { LeagueProgress } from '../../utils/progression';
+import { motion } from 'framer-motion';
+import { alpha } from '@mui/material';
+import { surface } from '../../theme';
+import { backdropSx } from './battleUi';
 
 interface LeagueCardProps {
     league: LeagueProgress;
@@ -45,7 +49,24 @@ const LeagueCard: React.FC<LeagueCardProps> = ({ league, stageLevel, starting, d
     const next = nextLeagueStage(league.defeated);
 
     return (
-        <Paper sx={{ p: 2.5 }}>
+        <Paper
+            component={motion.div}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 220, damping: 24, delay: 0.2 }}
+            sx={{
+                ...backdropSx('elite4drake'),
+                p: 2.5,
+                gridColumn: { xs: 'auto', md: '1 / -1' },
+                border: `1px solid ${surface.border}`,
+                transition: 'transform .15s, border-color .15s, box-shadow .15s',
+                '&:hover': {
+                    transform: 'translateY(-2px)',
+                    borderColor: alpha('#ffd700', 0.5),
+                    boxShadow: `0 6px 24px ${alpha('#ffd700', 0.18)}`,
+                },
+            }}
+        >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                 <EmojiEventsIcon sx={{ fontSize: 36, color: '#ffd700' }} />
                 <Box sx={{ flexGrow: 1, minWidth: 240 }}>

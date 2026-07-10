@@ -1,6 +1,28 @@
 import type { WeatherType } from '../../utils/battleEngine';
+import type { BackgroundId } from '../../data/battleBackgrounds';
+import { backgroundUrl } from '../../data/battleBackgrounds';
 
 /** Shared battle-UI constants and helpers. */
+
+/**
+ * Backdrop-image recipe for game-mode surfaces: a bundled battle background
+ * behind a dark vertical gradient so text keeps contrast. `isolation:
+ * isolate` keeps children (dialogs/alerts) above the ::before layer.
+ */
+export const backdropSx = (id: BackgroundId) => ({
+    position: 'relative',
+    overflow: 'hidden',
+    isolation: 'isolate',
+    '&::before': {
+        content: '""',
+        position: 'absolute',
+        inset: 0,
+        zIndex: -1,
+        backgroundImage: `linear-gradient(180deg, rgba(11,15,26,0.72) 0%, rgba(11,15,26,0.9) 70%, #0e1424 100%), url(${backgroundUrl(id)})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+    },
+} as const);
 
 export const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
