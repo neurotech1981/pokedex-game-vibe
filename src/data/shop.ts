@@ -1,4 +1,5 @@
 import type { BallId, HeldItemId, ItemId } from './items';
+import type { IvStat } from './natures';
 
 /**
  * The PokéCoin economy: every balance number in the game lives here so
@@ -30,6 +31,28 @@ export const HELD_PRICES: Record<HeldItemId, number> = {
     quickClaw: 1200,
     focusSash: 1500,
 };
+
+// Vitamins: targeted EV training, one stat each. +10 EVs per use,
+// capped by EV_STAT_CAP/EV_TOTAL_CAP (data/natures.ts).
+export type VitaminId = 'hpUp' | 'protein' | 'iron' | 'calcium' | 'zinc' | 'carbos';
+
+export const VITAMIN_PRICE = 600;
+export const VITAMIN_EV_GAIN = 10;
+
+export const VITAMINS: Record<VitaminId, { name: string; stat: IvStat; description: string }> = {
+    hpUp: { name: 'HP Up', stat: 'hp', description: '+10 HP EVs to one Pokémon.' },
+    protein: { name: 'Protein', stat: 'attack', description: '+10 Attack EVs to one Pokémon.' },
+    iron: { name: 'Iron', stat: 'defense', description: '+10 Defense EVs to one Pokémon.' },
+    calcium: { name: 'Calcium', stat: 'special-attack', description: '+10 Sp. Atk EVs to one Pokémon.' },
+    zinc: { name: 'Zinc', stat: 'special-defense', description: '+10 Sp. Def EVs to one Pokémon.' },
+    carbos: { name: 'Carbos', stat: 'speed', description: '+10 Speed EVs to one Pokémon.' },
+};
+
+export const VITAMIN_IDS: VitaminId[] = ['hpUp', 'protein', 'iron', 'calcium', 'zinc', 'carbos'];
+
+// Move Tutor: unlock machine/tutor moves in the Move Manager.
+export const TM_MOVE_PRICE = 500;
+export const TUTOR_MOVE_PRICE = 800;
 
 // Daily reward: base + streak bonus for consecutive-day claims.
 export const DAILY_BASE = 100;

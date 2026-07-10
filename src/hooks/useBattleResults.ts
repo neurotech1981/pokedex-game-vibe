@@ -11,7 +11,9 @@ import {
     addBalls,
     addHeldItems,
     addItems,
+    applyBattleEvs,
     applyBattleXp,
+    highestBaseStat,
     registerMonProgress,
     updateRecords,
 } from '../utils/progression';
@@ -133,6 +135,12 @@ export const useBattleResults = ({
             isBoss,
             streak: records.currentStreak,
         });
+        // EV trickle: deterministic training into each mon's strongest stat
+        const statFor = new Map(engine.order[1].map(key => {
+            const mon = engine.mons[key];
+            return [mon.pokemon.id, highestBaseStat(mon.pokemon)] as const;
+        }));
+        const withEvs = applyBattleEvs(withXp, entries, won, id => statFor.get(id) ?? 'hp');
         const drops = won ? rollBattleRewards(records.currentStreak, isBoss, Math.random) : [];
         const heldDrop = won ? rollHeldItemDrop(records.currentStreak, isBoss, Math.random) : null;
         const heldDrops = heldDrop ? [heldDrop] : [];
@@ -146,7 +154,7 @@ export const useBattleResults = ({
         const balls = addBalls(wild ? { ...engine.balls } : profile.balls, ballDrop ? [ballDrop] : []);
 
         // League progress: badges/defeats persist forever (idempotent append)
-        let league = withXp.league;
+        let league = withEvs.league;
         if (inLeague && won) {
             if (leagueRematch && !league.defeatedRematches.includes(leagueStage.id)) {
                 league = { ...league, defeatedRematches: [...league.defeatedRematches, leagueStage.id] };
@@ -162,12 +170,12 @@ export const useBattleResults = ({
         if (inLeague && won && leagueStage.badge) playChime('recruit'); // badge fanfare
 
         // Journey trainer beaten → mark the route progress (idempotent)
-        const journey = journeyTrainerId && won && !withXp.journey.clearedTrainers.includes(journeyTrainerId)
-            ? { ...withXp.journey, clearedTrainers: [...withXp.journey.clearedTrainers, journeyTrainerId] }
-            : withXp.journey;
+        const journey = journeyTrainerId && won && !withEvs.journey.clearedTrainers.includes(journeyTrainerId)
+            ? { ...withEvs.journey, clearedTrainers: [...withEvs.journey.clearedTrainers, journeyTrainerId] }
+            : withEvs.journey;
 
         // A caught wild mon goes straight to the Box with its battle level
-        let finalProfile: PlayerProfile = { ...withXp, records, items, heldItems, league, balls, journey, coins: withXp.coins + coinsEarned };
+        let finalProfile: PlayerProfile = { ...withEvs, records, items, heldItems, league, balls, journey, coins: withEvs.coins + coinsEarned };
         if (caughtMon) {
             finalProfile = registerMonProgress(finalProfile, {
                 id: caughtMon.pokemon.id,
@@ -286,7 +294,9 @@ export const useBattleResults = ({
                 const mons = { ...prev.mons };
                 const old = mons[evo.fromId] ?? { xp: 0, level: evo.level };
                 delete mons[evo.fromId];
-                mons[evo.toId] = { xp: old.xp, level: old.level, shiny: old.shiny, elite: old.elite, heldItem: old.heldItem, nature: old.nature, ivs: old.ivs };
+                // customMoves deliberately stays behind (new form re-picks moves);
+                // paid TM unlocks and trained EVs follow the evolution line.
+                mons[evo.toId] = { xp: old.xp, level: old.level, shiny: old.shiny, elite: old.elite, heldItem: old.heldItem, nature: old.nature, ivs: old.ivs, evs: old.evs, unlockedMoves: old.unlockedMoves };
                 return { ...prev, mons };
             });
             onEvolvePokemon(evo.fromId, newPokemon);

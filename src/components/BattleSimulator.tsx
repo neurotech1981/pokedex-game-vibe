@@ -776,6 +776,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                     nature: progress.nature,
                     ivs: progress.ivs,
+                    evs: progress.evs,
                 });
             });
             const team2 = t2.pokemon.map((p, i) => {
@@ -793,6 +794,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         // ...and their persisted nature/IVs (AI opponents stay neutral)
                         nature: hotseat ? progress.nature : undefined,
                         ivs: hotseat ? progress.ivs : undefined,
+                        evs: hotseat ? progress.evs : undefined,
                     }
                 );
             });
@@ -848,6 +850,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                     nature: progress.nature,
                     ivs: progress.ivs,
+                    evs: progress.evs,
                 });
             });
             const team2 = stage.opponents.map((o, i) =>
@@ -905,6 +908,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                     nature: progress.nature,
                     ivs: progress.ivs,
+                    evs: progress.evs,
                 });
             });
             const team2 = roster.map((p, i) => {
@@ -987,6 +991,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                     nature: progress.nature,
                     ivs: progress.ivs,
+                    evs: progress.evs,
                 });
             });
             const team2 = roster.map((p, i) =>
@@ -1051,6 +1056,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     // Nature/IVs are mon identity (like custom moves) — tower keeps them
                     nature: progress.nature,
                     ivs: progress.ivs,
+                    evs: progress.evs,
                 });
             });
             const team2 = opponents.map((o, i) =>
@@ -1110,6 +1116,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                     moves: progress.customMoves?.length ? progress.customMoves : movesets.get(p.id),
                     nature: progress.nature,
                     ivs: progress.ivs,
+                    evs: progress.evs,
                 });
             });
             const wildMon = createBattleMon(

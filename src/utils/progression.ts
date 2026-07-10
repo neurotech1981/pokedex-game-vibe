@@ -2,9 +2,10 @@ import type { Pokemon } from '../types/pokemon';
 import type { Move } from '../data/moves';
 import type { BallId, BallInventory, HeldInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { createInventory } from '../data/items';
-import type { Ivs } from '../data/natures';
-import { rollIvs, rollNature } from '../data/natures';
-import { STARTING_COINS, dailyRewardAmount } from '../data/shop';
+import type { Evs, Ivs, IvStat } from '../data/natures';
+import { EV_STAT_CAP, EV_TOTAL_CAP, IV_STATS, evTotal, rollIvs, rollNature } from '../data/natures';
+import type { VitaminId } from '../data/shop';
+import { STARTING_COINS, VITAMIN_EV_GAIN, dailyRewardAmount } from '../data/shop';
 import type { Rng } from './battleEngine';
 
 /**
@@ -31,6 +32,10 @@ export interface MonProgress {
     nature?: string;
     /** Per-stat IVs 0–31, rolled once on first registration. */
     ivs?: Ivs;
+    /** Trained EVs (vitamins + battle trickle); sparse, missing = 0. */
+    evs?: Evs;
+    /** Machine/tutor move names unlocked with coins in the Move Manager. */
+    unlockedMoves?: string[];
 }
 
 export interface PlayerRecords {
@@ -95,6 +100,8 @@ export interface PlayerProfile {
     dex: DexProgress;
     /** PokéCoin balance (earned in battle/daily/achievements, spent in the Poké Mart). */
     coins: number;
+    /** Owned vitamins (EV trainers), bought in the Poké Mart. */
+    vitamins: Partial<Record<VitaminId, number>>;
     /** ISO day (YYYY-MM-DD) of the last daily-reward claim. */
     lastDailyClaim?: string;
     /** Consecutive-day daily-claim streak (drives the streak bonus). */
@@ -114,6 +121,7 @@ export const createProfile = (): PlayerProfile => ({
     journey: { started: false, position: 'pallet-town', clearedTrainers: [] },
     dex: { seen: [], caught: [] },
     coins: STARTING_COINS,
+    vitamins: {},
 });
 
 export const KANTO_DEX_SIZE = 151;
@@ -295,6 +303,66 @@ export const addHeldItems = (inventory: HeldInventory, drops: HeldItemId[]): Hel
         next[id] = (next[id] ?? 0) + 1;
     }
     return next;
+};
+
+/**
+ * Grant EVs to one stat of one mon, respecting the per-stat and total caps.
+ * Returns the granted amount (possibly clamped below `amount`, 0 at cap).
+ */
+const grantEvs = (evs: Evs | undefined, stat: IvStat, amount: number): { evs: Evs; granted: number } => {
+    const current = evs?.[stat] ?? 0;
+    const statRoom = EV_STAT_CAP - current;
+    const totalRoom = EV_TOTAL_CAP - evTotal(evs);
+    const granted = Math.max(0, Math.min(amount, statRoom, totalRoom));
+    return { evs: { ...evs, [stat]: current + granted }, granted };
+};
+
+/** Use one vitamin on a mon: +VITAMIN_EV_GAIN EVs to `stat`. Null when fully capped. */
+export const applyVitamin = (profile: PlayerProfile, monId: number, stat: IvStat): PlayerProfile | null => {
+    const progress = profile.mons[monId];
+    if (!progress) return null;
+    const { evs, granted } = grantEvs(progress.evs, stat, VITAMIN_EV_GAIN);
+    if (granted === 0) return null;
+    return { ...profile, mons: { ...profile.mons, [monId]: { ...progress, evs } } };
+};
+
+/**
+ * Post-battle EV trickle: each participating mon gains kos*4 + (survived ? 2 : 0)
+ * EVs into its highest base stat — deterministic "training by battling"
+ * (ties break by IV_STATS order). `statOf` maps a species id to that stat.
+ */
+export const applyBattleEvs = (
+    profile: PlayerProfile,
+    entries: BattleXpEntry[],
+    won: boolean,
+    statOf: (pokemonId: number) => IvStat
+): PlayerProfile => {
+    if (!won) return profile;
+    let mons = profile.mons;
+    for (const entry of entries) {
+        const amount = entry.kos * 4 + (entry.survived ? 2 : 0);
+        if (amount === 0) continue;
+        const progress = mons[entry.pokemonId];
+        if (!progress) continue;
+        const { evs, granted } = grantEvs(progress.evs, statOf(entry.pokemonId), amount);
+        if (granted === 0) continue;
+        mons = { ...mons, [entry.pokemonId]: { ...progress, evs } };
+    }
+    return mons === profile.mons ? profile : { ...profile, mons };
+};
+
+/** The stat with the highest base value (ties → first in IV_STATS order). */
+export const highestBaseStat = (pokemon: Pokemon): IvStat => {
+    let best: IvStat = 'hp';
+    let bestValue = -1;
+    for (const stat of IV_STATS) {
+        const value = pokemon.stats.find(s => s.stat.name === stat)?.base_stat ?? 0;
+        if (value > bestValue) {
+            best = stat;
+            bestValue = value;
+        }
+    }
+    return best;
 };
 
 /** Add coins to the balance. */

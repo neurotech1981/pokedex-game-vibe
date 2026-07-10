@@ -4,7 +4,8 @@ import StorefrontIcon from '@mui/icons-material/Storefront';
 import RedeemIcon from '@mui/icons-material/Redeem';
 import type { BallId, HeldItemId, ItemId } from '../data/items';
 import { BALLS, BALL_IDS, HELD_ITEMS, HELD_ITEM_IDS, ITEMS, ITEM_IDS } from '../data/items';
-import { BALL_PRICES, HELD_PRICES, ITEM_PRICES, dailyRewardAmount } from '../data/shop';
+import type { VitaminId } from '../data/shop';
+import { BALL_PRICES, HELD_PRICES, ITEM_PRICES, VITAMINS, VITAMIN_IDS, VITAMIN_PRICE, dailyRewardAmount } from '../data/shop';
 import type { PlayerProfile } from '../utils/progression';
 import { addBalls, addHeldItems, addItems, claimDailyReward, spendCoins } from '../utils/progression';
 import { playChime } from '../utils/soundEffects';
@@ -130,6 +131,33 @@ const PokeMart: React.FC<PokeMartProps> = ({ profile, updateProfile }) => {
                                 owned={profile.balls[id] ?? 0}
                                 affordable={profile.coins >= BALL_PRICES[id]}
                                 onBuy={() => buy(BALL_PRICES[id], p => ({ ...p, balls: addBalls(p.balls, [id]) }))}
+                            />
+                        </Grid>
+                    ))}
+                </Grid>
+            </Box>
+
+            {/* Vitamins (EV training — used on a mon in the Team Builder) */}
+            <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                    Vitamins
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                        use them on a Pokémon in the Team Builder
+                    </Typography>
+                </Typography>
+                <Grid container spacing={1.5}>
+                    {VITAMIN_IDS.map((id: VitaminId) => (
+                        <Grid key={id} size={{ xs: 6, sm: 4, md: 3 }}>
+                            <WareCard
+                                name={VITAMINS[id].name}
+                                description={VITAMINS[id].description}
+                                price={VITAMIN_PRICE}
+                                owned={profile.vitamins[id] ?? 0}
+                                affordable={profile.coins >= VITAMIN_PRICE}
+                                onBuy={() => buy(VITAMIN_PRICE, p => ({
+                                    ...p,
+                                    vitamins: { ...p.vitamins, [id]: (p.vitamins[id] ?? 0) + 1 },
+                                }))}
                             />
                         </Grid>
                     ))}

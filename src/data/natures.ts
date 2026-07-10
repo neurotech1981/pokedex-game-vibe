@@ -89,6 +89,19 @@ export const ivTotal = (ivs: Ivs): number => IV_STATS.reduce((sum, stat) => sum 
 
 export const MAX_IV_TOTAL = MAX_IV * IV_STATS.length;
 
+/**
+ * EVs (effort values): trained points on top of IVs — from shop vitamins
+ * and a small battle trickle. Sparse map, missing stat = 0. Folded into
+ * battle stats as +floor(ev/4) in createBattleMon.
+ */
+export type Evs = Partial<Record<IvStat, number>>;
+
+export const EV_STAT_CAP = 252;
+export const EV_TOTAL_CAP = 510;
+
+export const evTotal = (evs: Evs | undefined): number =>
+    IV_STATS.reduce((sum, stat) => sum + (evs?.[stat] ?? 0), 0);
+
 /** Short UI blurb like "Adamant ↑Atk ↓SpA" (neutral natures get no arrows). */
 export const natureLabel = (natureId: string | undefined): string => {
     const nature = getNature(natureId);

@@ -124,6 +124,32 @@ export const selectLevelUpCandidates = (
         .sort((a, b) => b.level - a.level)
         .slice(0, limit);
 
+/**
+ * Level-up learnset plus a machine/tutor tail for the Move Manager. Level-up
+ * candidates keep their strongest-first order; machine/tutor moves (level 0,
+ * API order) fill up to `extraLimit` more slots, deduped against level-up.
+ */
+export const selectLearnsetCandidates = (
+    entries: ApiPokemonMoveEntry[],
+    levelUpLimit: number = LEARNSET_LIMIT,
+    extraLimit: number = EXTRA_LEARNSET_LIMIT
+): { move: { name: string; url: string }; level: number; method: LearnMethod }[] => {
+    const levelUp = selectLevelUpCandidates(entries, levelUpLimit)
+        .map(c => ({ ...c, method: 'level-up' as const }));
+    const seen = new Set(levelUp.map(c => c.move.name));
+    const extras: { move: { name: string; url: string }; level: number; method: LearnMethod }[] = [];
+    for (const entry of entries) {
+        if (extras.length >= extraLimit) break;
+        if (seen.has(entry.move.name)) continue;
+        const methods = entry.version_group_details.map(d => d.move_learn_method.name);
+        const method: LearnMethod | null = methods.includes('machine') ? 'machine' : methods.includes('tutor') ? 'tutor' : null;
+        if (!method) continue;
+        seen.add(entry.move.name);
+        extras.push({ move: entry.move, level: 0, method });
+    }
+    return [...levelUp, ...extras];
+};
+
 /** Compose the final ≤4 moveset: mostly damaging moves, one status slot if available. */
 export const pickMoveset = (moves: Move[]): Move[] => {
     const damaging = moves.filter(m => m.power > 0);
@@ -205,13 +231,21 @@ const fetchMoveset = async (pokemon: Pokemon): Promise<Move[]> => {
 // the UI can show a retry; battles never depend on this path.
 // ---------------------------------------------------------------------------
 
+export type LearnMethod = 'level-up' | 'machine' | 'tutor';
+
 export interface LearnsetEntry {
     move: Move;
     level: number;
+    /** How the mon learns it: level-up is free, machine/tutor are coin-unlocked. */
+    method: LearnMethod;
 }
 
-const LEARNSET_STORAGE_KEY = 'pokedexGame.learnsets.v1';
+// v2: v1 entries predate the `method` field (TM/tutor moves)
+const LEARNSET_STORAGE_KEY = 'pokedexGame.learnsets.v2';
+const LEGACY_LEARNSET_KEY = 'pokedexGame.learnsets.v1';
 const LEARNSET_LIMIT = 20;
+/** Extra machine/tutor moves appended after the level-up learnset. */
+const EXTRA_LEARNSET_LIMIT = 20;
 
 const readLearnsetMirror = (): Record<number, LearnsetEntry[]> => {
     try {
@@ -223,6 +257,7 @@ const readLearnsetMirror = (): Record<number, LearnsetEntry[]> => {
 
 const writeLearnsetMirror = (id: number, entries: LearnsetEntry[]): void => {
     try {
+        localStorage.removeItem(LEGACY_LEARNSET_KEY); // orphaned v1 blob
         const mirror = readLearnsetMirror();
         mirror[id] = entries;
         localStorage.setItem(LEARNSET_STORAGE_KEY, JSON.stringify(mirror));
@@ -240,11 +275,11 @@ const fetchLearnset = async (pokemon: Pokemon): Promise<LearnsetEntry[]> => {
     const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemon.id}`);
     if (!res.ok) throw new Error(`pokemon ${pokemon.id}: HTTP ${res.status}`);
     const data = await res.json();
-    const candidates = selectLevelUpCandidates(data.moves as ApiPokemonMoveEntry[], LEARNSET_LIMIT);
+    const candidates = selectLearnsetCandidates(data.moves as ApiPokemonMoveEntry[]);
     if (candidates.length === 0) throw new Error('no level-up moves');
 
     const settled = await Promise.allSettled(
-        candidates.map(async c => ({ move: mapApiMove(await fetchMoveDetail(c.move.url)), level: c.level }))
+        candidates.map(async c => ({ move: mapApiMove(await fetchMoveDetail(c.move.url)), level: c.level, method: c.method }))
     );
     const entries = settled
         .filter((r): r is PromiseFulfilledResult<LearnsetEntry> => r.status === 'fulfilled')
@@ -255,7 +290,7 @@ const fetchLearnset = async (pokemon: Pokemon): Promise<LearnsetEntry[]> => {
     return entries;
 };
 
-/** Full level-up learnset (≤20, level desc). Rejects on failure — callers retry. */
+/** Full learnset: ≤20 level-up (level desc) + ≤20 machine/tutor. Rejects on failure — callers retry. */
 export const getFullLearnset = (pokemon: Pokemon): Promise<LearnsetEntry[]> => {
     let cached = learnsetCache.get(pokemon.id);
     if (!cached) {

@@ -37,8 +37,10 @@ import { HELD_ITEMS, HELD_ITEM_IDS } from '../data/items';
 import type { Move } from '../data/moves';
 import type { Pokemon, Team } from '../types/pokemon';
 import type { PlayerProfile } from '../utils/progression';
-import { availableHeldItems, getMonProgress, registerMonProgress } from '../utils/progression';
-import { IV_STATS, MAX_IV_TOTAL, ivTotal, natureLabel } from '../data/natures';
+import { applyVitamin, availableHeldItems, getMonProgress, registerMonProgress, spendCoins } from '../utils/progression';
+import { EV_TOTAL_CAP, IV_STATS, MAX_IV_TOTAL, evTotal, ivTotal, natureLabel } from '../data/natures';
+import type { VitaminId } from '../data/shop';
+import { VITAMINS, VITAMIN_IDS } from '../data/shop';
 import MoveManagerDialog from './MoveManagerDialog';
 
 interface Props {
@@ -266,6 +268,35 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                     ...prev.mons,
                     [pokemonId]: { ...existing, customMoves: moves ?? undefined },
                 },
+            };
+        });
+    };
+
+    // Unlock a TM/tutor move: spend coins, record on MonProgress.unlockedMoves
+    const handleUnlockMove = (pokemonId: number, moveName: string, price: number) => {
+        updateProfile(prev => {
+            const paid = spendCoins(prev, price);
+            if (!paid) return prev;
+            const existing = paid.mons[pokemonId] ?? { xp: 0, level: 50 };
+            return {
+                ...paid,
+                mons: {
+                    ...paid.mons,
+                    [pokemonId]: { ...existing, unlockedMoves: [...(existing.unlockedMoves ?? []), moveName] },
+                },
+            };
+        });
+    };
+
+    // Use one owned vitamin on a mon (+10 EVs to the vitamin's stat)
+    const handleUseVitamin = (pokemonId: number, vitaminId: VitaminId) => {
+        updateProfile(prev => {
+            if ((prev.vitamins[vitaminId] ?? 0) <= 0) return prev;
+            const trained = applyVitamin(prev, pokemonId, VITAMINS[vitaminId].stat);
+            if (!trained) return prev; // fully capped — keep the vitamin
+            return {
+                ...trained,
+                vitamins: { ...trained.vitamins, [vitaminId]: (trained.vitamins[vitaminId] ?? 0) - 1 },
             };
         });
     };
@@ -530,7 +561,11 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                                             progress.ivs
                                                                                 ? `IVs ${ivTotal(progress.ivs)}/${MAX_IV_TOTAL} · ${IV_STATS.map(
                                                                                     s => `${{ hp: 'HP', attack: 'Atk', defense: 'Def', 'special-attack': 'SpA', 'special-defense': 'SpD', speed: 'Spe' }[s]} ${progress.ivs![s]}`
-                                                                                ).join(' · ')}`
+                                                                                ).join(' · ')}${evTotal(progress.evs) > 0
+                                                                                    ? ` — EVs ${evTotal(progress.evs)}/${EV_TOTAL_CAP} · ${IV_STATS.filter(s => (progress.evs?.[s] ?? 0) > 0).map(
+                                                                                        s => `${{ hp: 'HP', attack: 'Atk', defense: 'Def', 'special-attack': 'SpA', 'special-defense': 'SpD', speed: 'Spe' }[s]} ${progress.evs![s]}`
+                                                                                    ).join(' · ')}`
+                                                                                    : ''}`
                                                                                 : ''
                                                                         }
                                                                     >
@@ -556,6 +591,27 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                             >
                                                                 Moves{progress.customMoves?.length ? ' ★' : ''}
                                                             </Button>
+                                                            {VITAMIN_IDS.some(id => (profile.vitamins[id] ?? 0) > 0) && (
+                                                                <TextField
+                                                                    select
+                                                                    fullWidth
+                                                                    size="small"
+                                                                    variant="standard"
+                                                                    value=""
+                                                                    onChange={e => handleUseVitamin(pokemon.id, e.target.value as VitaminId)}
+                                                                    sx={{ mt: 0.5, '& .MuiInputBase-root': { fontSize: '0.65rem' } }}
+                                                                    slotProps={{ select: { displayEmpty: true } }}
+                                                                >
+                                                                    <MenuItem value="" disabled>
+                                                                        <em>Use vitamin (EVs {evTotal(progress.evs)}/{EV_TOTAL_CAP})</em>
+                                                                    </MenuItem>
+                                                                    {VITAMIN_IDS.filter(id => (profile.vitamins[id] ?? 0) > 0).map(id => (
+                                                                        <MenuItem key={id} value={id}>
+                                                                            {VITAMINS[id].name} ×{profile.vitamins[id]}
+                                                                        </MenuItem>
+                                                                    ))}
+                                                                </TextField>
+                                                            )}
                                                             {(ownedHeldItems.length > 0 || progress.heldItem) && (
                                                                 <TextField
                                                                     select
@@ -933,6 +989,9 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                     onSave={moves => handleSaveCustomMoves(movesFor.id, moves)}
                     onClose={() => setMovesFor(null)}
                     getTypeColor={getTypeColor}
+                    coins={profile.coins}
+                    unlockedMoves={getMonProgress(profile, movesFor.id).unlockedMoves}
+                    onUnlockMove={(name, price) => handleUnlockMove(movesFor.id, name, price)}
                 />
             )}
 

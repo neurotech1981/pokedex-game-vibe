@@ -7,7 +7,7 @@ import { getDamageClass, getMovesForTypes } from '../data/moves';
 import type { BallId, BallInventory, HeldItemId, ItemId, ItemInventory } from '../data/items';
 import { BALLS, HELD_ITEMS, ITEMS, createInventory } from '../data/items';
 import { calculateTypeEffectiveness, TYPE_EFFECTIVENESS, TypeChart } from '../data/typeChart';
-import type { Ivs, IvStat } from '../data/natures';
+import type { Evs, Ivs, IvStat } from '../data/natures';
 import { natureMultiplier } from '../data/natures';
 
 export type WeatherType = 'none' | 'rain' | 'sunny' | 'sandstorm' | 'hail';
@@ -182,6 +182,8 @@ export interface BattleMonOptions {
     nature?: string;
     /** Per-stat IVs 0–31, folded into base stats as +floor(iv/2). */
     ivs?: Ivs;
+    /** Trained EVs 0–252/stat (510 total), folded into base stats as +floor(ev/4). */
+    evs?: Evs;
 }
 
 export const createBattleMon = (
@@ -193,18 +195,21 @@ export const createBattleMon = (
     opts: BattleMonOptions = {}
 ): BattleMon => {
     const statMod = opts.statMod ?? 1;
-    // Effective base stat = round((base + floor(iv/2)) * natureMult * statMod).
-    // IVs add up to +15 points per stat (HP included); natures are ±10% on one
-    // non-HP stat each (natureMultiplier returns 1 for HP and neutral natures).
+    // Effective base stat = round((base + floor(iv/2) + floor(ev/4)) * natureMult * statMod).
+    // IVs add up to +15 points per stat (HP included); EVs up to +63 per stat but
+    // the 510 total cap limits ~2 maxed stats; natures are ±10% on one non-HP
+    // stat each (natureMultiplier returns 1 for HP and neutral natures).
     // With no opts this is the identity, so plain mons are untouched.
-    const effectivePokemon = statMod === 1 && !opts.nature && !opts.ivs
+    const effectivePokemon = statMod === 1 && !opts.nature && !opts.ivs && !opts.evs
         ? pokemon
         : {
             ...pokemon,
             stats: pokemon.stats.map(s => ({
                 ...s,
                 base_stat: Math.round(
-                    (s.base_stat + (opts.ivs ? Math.floor((opts.ivs[s.stat.name as IvStat] ?? 0) / 2) : 0))
+                    (s.base_stat
+                        + (opts.ivs ? Math.floor((opts.ivs[s.stat.name as IvStat] ?? 0) / 2) : 0)
+                        + (opts.evs ? Math.floor((opts.evs[s.stat.name as IvStat] ?? 0) / 4) : 0))
                     * natureMultiplier(opts.nature, s.stat.name)
                     * statMod
                 ),

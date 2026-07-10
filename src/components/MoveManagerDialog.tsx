@@ -20,6 +20,7 @@ import type { Move } from '../data/moves';
 import { getDamageClass } from '../data/moves';
 import type { LearnsetEntry } from '../utils/movesets';
 import { getFullLearnset, getMovesetForPokemon } from '../utils/movesets';
+import { TM_MOVE_PRICE, TUTOR_MOVE_PRICE } from '../data/shop';
 
 interface MoveManagerDialogProps {
     open: boolean;
@@ -30,10 +31,19 @@ interface MoveManagerDialogProps {
     onSave: (moves: Move[] | null) => void;
     onClose: () => void;
     getTypeColor: (type: string) => string;
+    /** PokéCoin balance (gates TM/tutor unlocks). */
+    coins: number;
+    /** Machine/tutor move names already unlocked for this mon. */
+    unlockedMoves: string[] | undefined;
+    /** Spend coins and record the unlock on MonProgress. */
+    onUnlockMove: (moveName: string, price: number) => void;
 }
 
 const CLASS_LABEL = { physical: 'PHYS', special: 'SPEC', status: 'STAT' } as const;
 const MAX_MOVES = 4;
+
+const unlockPrice = (method: LearnsetEntry['method']): number =>
+    method === 'tutor' ? TUTOR_MOVE_PRICE : TM_MOVE_PRICE;
 
 const MoveManagerDialog: React.FC<MoveManagerDialogProps> = ({
     open,
@@ -42,6 +52,9 @@ const MoveManagerDialog: React.FC<MoveManagerDialogProps> = ({
     onSave,
     onClose,
     getTypeColor,
+    coins,
+    unlockedMoves,
+    onUnlockMove,
 }) => {
     const [learnset, setLearnset] = useState<LearnsetEntry[] | null>(null);
     const [autoMoves, setAutoMoves] = useState<Move[] | null>(null);
@@ -94,8 +107,8 @@ const MoveManagerDialog: React.FC<MoveManagerDialogProps> = ({
             <DialogTitle sx={{ textTransform: 'capitalize' }}>
                 {pokemon.name} — Moves
                 <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
-                    Pick up to {MAX_MOVES} moves from the level-up learnset
-                    {currentCustom?.length ? ' (custom set active)' : ' (auto set active)'}
+                    Pick up to {MAX_MOVES} moves — level-up moves are free, TM/Tutor moves unlock with 🪙
+                    {currentCustom?.length ? ' (custom set active)' : ' (auto set active)'} · Balance: 🪙 {coins.toLocaleString()}
                 </Typography>
             </DialogTitle>
             <DialogContent dividers>
@@ -114,31 +127,52 @@ const MoveManagerDialog: React.FC<MoveManagerDialogProps> = ({
                     <List dense disablePadding>
                         {learnset.map(entry => {
                             const move = entry.move;
+                            const method = entry.method ?? 'level-up';
+                            const locked = method !== 'level-up' && !unlockedMoves?.includes(move.name);
+                            const price = unlockPrice(method);
                             const checked = selected.includes(move.name);
                             const damageClass = getDamageClass(move);
                             return (
                                 <ListItemButton
                                     key={move.name}
-                                    onClick={() => toggle(move.name)}
-                                    disabled={!checked && selected.length >= MAX_MOVES}
-                                    sx={{ borderRadius: 1, mb: 0.25, gap: 1 }}
+                                    onClick={() => !locked && toggle(move.name)}
+                                    disabled={!locked && !checked && selected.length >= MAX_MOVES}
+                                    sx={{ borderRadius: 1, mb: 0.25, gap: 1, opacity: locked ? 0.75 : 1 }}
                                 >
-                                    <Checkbox edge="start" checked={checked} size="small" disableRipple tabIndex={-1} />
+                                    <Checkbox edge="start" checked={checked} size="small" disableRipple tabIndex={-1} disabled={locked} />
                                     <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 600 }}>{move.name}</Typography>
                                             <Chip label={move.type} size="small" sx={{ height: 16, fontSize: '0.6rem', bgcolor: getTypeColor(move.type), color: '#fff', textTransform: 'capitalize' }} />
                                             <Chip label={CLASS_LABEL[damageClass]} size="small" variant="outlined" sx={{ height: 16, fontSize: '0.6rem' }} />
+                                            {method !== 'level-up' && (
+                                                <Chip label={method === 'machine' ? 'TM' : 'Tutor'} size="small" sx={{ height: 16, fontSize: '0.6rem', bgcolor: '#8b7cf7', color: '#fff' }} />
+                                            )}
                                             {(move.priority ?? 0) > 0 && <Chip label={`+${move.priority}`} size="small" sx={{ height: 16, fontSize: '0.6rem', bgcolor: '#4fc3f7', color: '#000' }} />}
                                             {move.multiHit && <Chip label={`${move.multiHit.min}–${move.multiHit.max}×`} size="small" sx={{ height: 16, fontSize: '0.6rem' }} />}
                                             {move.flinchChance && <Chip label="flinch" size="small" sx={{ height: 16, fontSize: '0.6rem', bgcolor: '#ffb74d', color: '#000' }} />}
                                             {move.debuff && <Chip label={`-${move.debuff.stat.slice(0, 3).toUpperCase()}`} size="small" sx={{ height: 16, fontSize: '0.6rem', bgcolor: '#e57373', color: '#fff' }} />}
                                         </Box>
                                         <Typography variant="caption" color="text.secondary">
-                                            Lv {entry.level} · Pwr {move.power > 0 ? move.power : '—'} · Acc {Math.round(move.accuracy * 100)}%
+                                            {method === 'level-up' ? `Lv ${entry.level}` : method === 'machine' ? 'TM' : 'Move Tutor'} · Pwr {move.power > 0 ? move.power : '—'} · Acc {Math.round(move.accuracy * 100)}%
                                         </Typography>
                                     </Box>
-                                    <Chip icon={<BoltIcon sx={{ fontSize: 12 }} />} label={move.energyCost} size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                    {locked ? (
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            disabled={coins < price}
+                                            onClick={e => {
+                                                e.stopPropagation();
+                                                onUnlockMove(move.name, price);
+                                            }}
+                                            sx={{ fontSize: '0.65rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                        >
+                                            Unlock 🪙{price}
+                                        </Button>
+                                    ) : (
+                                        <Chip icon={<BoltIcon sx={{ fontSize: 12 }} />} label={move.energyCost} size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                    )}
                                 </ListItemButton>
                             );
                         })}
