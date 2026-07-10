@@ -26,7 +26,8 @@ A full-featured Pokédex and Pokémon battle game built with React 19, TypeScrip
 - **Safari expeditions** — explore biomes, weaken wild Pokémon and catch them with Poké Balls
 - **Gauntlet** — endless escalating stages with boss fights
 - **Pokémon League** — 8 Kanto Gym Leaders, the Elite Four and Champion, then the Johto
-  post-game: 8 more gyms and Red at Mt. Silver; badges + Round 2 rematches
+  post-game (8 more gyms and Red at Mt. Silver), then the **Hoenn expansion**: 8 Hoenn gyms,
+  a new Elite Four and Champion Steven; badges + Round 2 rematches
 - **Battle Tower** — level-normalized pure-skill streak ladder
 
 ### Progression
@@ -35,15 +36,24 @@ A full-featured Pokédex and Pokémon battle game built with React 19, TypeScrip
   (±10% stat spreads) and per-stat IVs, shown in the Team Builder and felt in battle
 - **Pokédex completion** — seen/caught registration for every species, completion bars
   on the Trainer Card, badges on the dex grid and completion achievements up to Kanto Master
+- **PokéCoins & the Poké Mart** — earn coins from every win (streaks, bosses and league
+  stages pay more), claim a daily reward, and spend it all on items, Poké Balls, held items
+  and vitamins in the shop
+- **EV training** — feed vitamins to a Pokémon or let battle wins trickle effort into its
+  strongest stat (classic 252/510 caps)
+- **TMs & Move Tutor** — unlock machine/tutor moves with coins in the Move Manager
 - Item and Poké Ball economy from battle drops; held-item collection
 - Recruitment, Box storage, shiny and elite Pokémon
-- Achievements and a Trainer Card
+- Achievements (they pay coins too) and a Trainer Card
 
 ### Replays & save safety
 - **Battle replays** — every finished battle is recorded (deterministic seeded engine);
   rewatch the last 20 from the Trainer Card with full 3D playback
+- **Share codes** — copy a compact code for any team or replay and send it to a friend;
+  they paste it in and get your exact team or watch your battle
 - **Save export/import** — download your entire save as JSON and restore it anywhere
-- **Installable PWA** — add it to your home screen; the app shell works offline
+- **Installable PWA** — add it to your home screen; gen 1–3 sprites, artwork and cries are
+  bundled, so core play works fully offline
 
 Fully responsive — plays great on phones.
 
