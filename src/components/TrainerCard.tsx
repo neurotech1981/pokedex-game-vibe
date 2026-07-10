@@ -98,7 +98,12 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile, onWatchReplay }) => 
                         {records.totalBattles} battles fought · {knownMons} Pokémon trained · {records.caught} caught in the wild
                     </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', gap: 0.75 }}>
+                <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                    <Chip
+                        size="small"
+                        label={`🪙 ${profile.coins.toLocaleString()} PokéCoins`}
+                        sx={{ bgcolor: 'rgba(255, 215, 0, 0.15)', color: '#ffd700', fontWeight: 700 }}
+                    />
                     {BALL_IDS.map(id => (
                         <Chip key={id} size="small" label={`${BALLS[id].name} ×${profile.balls[id] ?? 0}`} />
                     ))}

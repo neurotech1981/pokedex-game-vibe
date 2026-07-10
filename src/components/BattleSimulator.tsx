@@ -1837,6 +1837,7 @@ const BattleSimulator: React.FC<Props> = ({ teams, pokemons, getTypeColor, typeE
                         drops={battleResult?.drops ?? []}
                         heldDrops={battleResult?.heldDrops ?? []}
                         streak={battleResult?.streak ?? 0}
+                        coins={battleResult?.coins ?? 0}
                         stageLabel={
                             hotseat
                                 ? `Player ${engine.winner} wins!`

@@ -16,6 +16,7 @@ import {
     updateRecords,
 } from '../utils/progression';
 import { rollBallDrop, rollBattleRewards, rollHeldItemDrop } from '../data/rewards';
+import { coinsForBattle } from '../data/shop';
 import { applyAchievements, evaluateAchievements, getAchievement } from '../utils/achievements';
 import type { RecruitOffer } from '../utils/recruitment';
 import { rollRecruit } from '../utils/recruitment';
@@ -34,6 +35,8 @@ export interface BattleResult {
     streak: number;
     /** Achievement ids unlocked by this battle. */
     achievements: string[];
+    /** PokéCoins earned (0 on loss). */
+    coins: number;
 }
 
 interface UseBattleResultsOptions {
@@ -120,6 +123,16 @@ export const useBattleResults = ({
         const xpMultiplier = inLeague ? (leagueRematch ? REMATCH_XP_MULTIPLIER : LEAGUE_XP_MULTIPLIER) : inGauntlet ? GAUNTLET_XP_MULTIPLIER : 1;
         const { profile: withXp, gains } = applyBattleXp(profile, entries, won, records.currentStreak, xpMultiplier);
         const isBoss = inLeague || (inGauntlet && isBossStage(gauntletStage)) || (towerMode && won && isTowerBossBattle(records.towerStreak));
+        const coinsEarned = coinsForBattle({
+            won,
+            mode: inLeague ? 'league' : inGauntlet ? 'gauntlet' : towerMode ? 'tower' : wild ? 'wild' : journeyTrainerId ? 'journey' : 'quick',
+            caught: Boolean(caughtMon),
+            leagueKind: leagueStage?.kind,
+            leagueRematch,
+            towerStreak: records.towerStreak,
+            isBoss,
+            streak: records.currentStreak,
+        });
         const drops = won ? rollBattleRewards(records.currentStreak, isBoss, Math.random) : [];
         const heldDrop = won ? rollHeldItemDrop(records.currentStreak, isBoss, Math.random) : null;
         const heldDrops = heldDrop ? [heldDrop] : [];
@@ -154,7 +167,7 @@ export const useBattleResults = ({
             : withXp.journey;
 
         // A caught wild mon goes straight to the Box with its battle level
-        let finalProfile: PlayerProfile = { ...withXp, records, items, heldItems, league, balls, journey };
+        let finalProfile: PlayerProfile = { ...withXp, records, items, heldItems, league, balls, journey, coins: withXp.coins + coinsEarned };
         if (caughtMon) {
             finalProfile = registerMonProgress(finalProfile, {
                 id: caughtMon.pokemon.id,
@@ -184,7 +197,7 @@ export const useBattleResults = ({
         }
 
         updateProfile(() => finalProfile);
-        setBattleResult({ gains, drops, heldDrops, streak: records.currentStreak, achievements: earned });
+        setBattleResult({ gains, drops, heldDrops, streak: records.currentStreak, achievements: earned, coins: coinsEarned });
 
         // Recruitment offer (guaranteed after gauntlet bosses and E4/champion
         // wins; never in wild battles — catching IS the recruitment)

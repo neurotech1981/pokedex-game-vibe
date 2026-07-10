@@ -26,6 +26,8 @@ interface PostBattlePanelProps {
     /** Rare held-item drops (bosses / streak milestones). */
     heldDrops?: HeldItemId[];
     streak: number;
+    /** PokéCoins earned this battle. */
+    coins?: number;
     /** Omit to hide the rematch button (e.g. mid-gauntlet). */
     onRematch?: () => void;
     rematchLabel?: string;
@@ -50,6 +52,7 @@ const PostBattlePanel: React.FC<PostBattlePanelProps> = ({
     drops,
     heldDrops = [],
     streak,
+    coins = 0,
     onRematch,
     rematchLabel = 'Rematch',
     onExit,
@@ -117,6 +120,17 @@ const PostBattlePanel: React.FC<PostBattlePanelProps> = ({
                                     label={`${streak} win streak!`}
                                     size="small"
                                     sx={{ bgcolor: 'rgba(255, 87, 34, 0.2)', color: '#ff8a65', fontWeight: 700, '& .MuiChip-icon': { color: '#ff8a65' } }}
+                                />
+                            )}
+                            {coins > 0 && (
+                                <Chip
+                                    component={motion.div}
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.4 }}
+                                    label={`🪙 +${coins} PokéCoins`}
+                                    size="small"
+                                    sx={{ bgcolor: 'rgba(255, 215, 0, 0.15)', color: '#ffd700', fontWeight: 700 }}
                                 />
                             )}
                         </Box>

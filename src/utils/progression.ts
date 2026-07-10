@@ -4,6 +4,7 @@ import type { BallId, BallInventory, HeldInventory, HeldItemId, ItemId, ItemInve
 import { createInventory } from '../data/items';
 import type { Ivs } from '../data/natures';
 import { rollIvs, rollNature } from '../data/natures';
+import { STARTING_COINS, dailyRewardAmount } from '../data/shop';
 import type { Rng } from './battleEngine';
 
 /**
@@ -92,6 +93,12 @@ export interface PlayerProfile {
     };
     /** Seen/caught Pokédex registration. */
     dex: DexProgress;
+    /** PokéCoin balance (earned in battle/daily/achievements, spent in the Poké Mart). */
+    coins: number;
+    /** ISO day (YYYY-MM-DD) of the last daily-reward claim. */
+    lastDailyClaim?: string;
+    /** Consecutive-day daily-claim streak (drives the streak bonus). */
+    dailyStreak?: number;
 }
 
 export const createProfile = (): PlayerProfile => ({
@@ -106,6 +113,7 @@ export const createProfile = (): PlayerProfile => ({
     achievements: [],
     journey: { started: false, position: 'pallet-town', clearedTrainers: [] },
     dex: { seen: [], caught: [] },
+    coins: STARTING_COINS,
 });
 
 export const KANTO_DEX_SIZE = 151;
@@ -287,6 +295,38 @@ export const addHeldItems = (inventory: HeldInventory, drops: HeldItemId[]): Hel
         next[id] = (next[id] ?? 0) + 1;
     }
     return next;
+};
+
+/** Add coins to the balance. */
+export const addCoins = (profile: PlayerProfile, amount: number): PlayerProfile =>
+    amount === 0 ? profile : { ...profile, coins: profile.coins + amount };
+
+/** Spend coins; null when the balance can't cover it (callers disable buttons, this is the guard). */
+export const spendCoins = (profile: PlayerProfile, amount: number): PlayerProfile | null =>
+    profile.coins >= amount ? { ...profile, coins: profile.coins - amount } : null;
+
+/** The ISO day (YYYY-MM-DD) immediately before `todayIso`. */
+const previousIsoDay = (todayIso: string): string =>
+    new Date(Date.parse(`${todayIso}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Claim the daily reward. Pure — the current day is injected (mirrors the
+ * rng-injection convention) so tests control time. Returns null when
+ * already claimed today; consecutive-day claims grow the streak bonus,
+ * a missed day resets it.
+ */
+export const claimDailyReward = (
+    profile: PlayerProfile,
+    todayIso: string
+): { profile: PlayerProfile; amount: number; streak: number } | null => {
+    if (profile.lastDailyClaim === todayIso) return null;
+    const streak = profile.lastDailyClaim === previousIsoDay(todayIso) ? (profile.dailyStreak ?? 0) + 1 : 1;
+    const amount = dailyRewardAmount(streak);
+    return {
+        profile: { ...profile, coins: profile.coins + amount, lastDailyClaim: todayIso, dailyStreak: streak },
+        amount,
+        streak,
+    };
 };
 
 /** How many copies of a held item are free to equip (owned minus equipped). */

@@ -50,6 +50,7 @@ import TypeEffectiveness from './TypeEffectiveness';
 import TeamBuilder from './TeamBuilder';
 import BattleSimulator from './BattleSimulator';
 import TrainerCard from './TrainerCard';
+import PokeMart from './PokeMart';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import type { QueryFunctionContext } from '@tanstack/react-query';
 import { useDebounce } from 'use-debounce';
@@ -1142,6 +1143,7 @@ const Pokemon: React.FC = () => {
                         <Tab label="Type Calculator" />
                         <Tab label="Battle" />
                         <Tab label="Trainer" />
+                        <Tab label="Poké Mart" />
                     </Tabs>
                 </Toolbar>
             </AppBar>
@@ -1499,6 +1501,10 @@ const Pokemon: React.FC = () => {
                         setMainTab(3);
                     }}
                 />
+            )}
+
+            {mainTab === 5 && (
+                <PokeMart profile={profile} updateProfile={updateProfile} />
             )}
 
             <Modal
