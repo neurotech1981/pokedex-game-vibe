@@ -6,7 +6,10 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import type { BattleReplay } from '../utils/replay';
-import { deleteReplay, loadReplays } from '../utils/replay';
+import { deleteReplay, loadReplays, saveReplay } from '../utils/replay';
+import { decodeReplayCode, encodeReplayCode } from '../utils/shareCodes';
+import { ImportCodeDialog, ShareCodeDialog } from './ShareCodeDialog';
+import IosShareIcon from '@mui/icons-material/IosShare';
 import { applyFullSave, buildFullSave, parseFullSave } from '../utils/saveData';
 import type { PlayerProfile } from '../utils/progression';
 import { KANTO_DEX_SIZE, JOHTO_DEX_MAX, HOENN_DEX_MAX, dexCompletion } from '../utils/progression';
@@ -49,6 +52,8 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile, onWatchReplay }) => 
     const winRate = records.totalBattles > 0 ? Math.round((records.wins / records.totalBattles) * 100) : 0;
     const dex = dexCompletion(profile.dex);
     const [replays, setReplays] = useState<BattleReplay[]>(loadReplays);
+    const [shareCode, setShareCode] = useState<{ title: string; code: string } | null>(null);
+    const [importReplayOpen, setImportReplayOpen] = useState(false);
     const [importError, setImportError] = useState<string | null>(null);
     const [pendingImport, setPendingImport] = useState<ReturnType<typeof parseFullSave> | null>(null);
 
@@ -245,9 +250,14 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile, onWatchReplay }) => 
 
             {/* Replays */}
             <Paper sx={{ p: 2.5 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
-                    ▶️ Battle Replays · {replays.length}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5, gap: 1 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, flexGrow: 1 }}>
+                        ▶️ Battle Replays · {replays.length}
+                    </Typography>
+                    <Button size="small" variant="outlined" startIcon={<IosShareIcon />} onClick={() => setImportReplayOpen(true)}>
+                        Import Code
+                    </Button>
+                </Box>
                 {replays.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">
                         Every battle you finish is recorded automatically — the last 20 stay here to rewatch.
@@ -285,6 +295,14 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile, onWatchReplay }) => 
                                 >
                                     Watch
                                 </Button>
+                                <Tooltip title="Copy replay share code">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShareCode({ title: `Share "${replay.label}"`, code: encodeReplayCode(replay) })}
+                                    >
+                                        <IosShareIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
                                 <Tooltip title="Delete replay">
                                     <IconButton size="small" onClick={() => setReplays(deleteReplay(replay.date))}>
                                         <DeleteOutlineIcon fontSize="small" />
@@ -325,6 +343,26 @@ const TrainerCard: React.FC<TrainerCardProps> = ({ profile, onWatchReplay }) => 
                     </Box>
                 )}
             </Paper>
+
+            {/* Share code dialogs */}
+            {shareCode && (
+                <ShareCodeDialog
+                    open
+                    title={shareCode.title}
+                    code={shareCode.code}
+                    onClose={() => setShareCode(null)}
+                />
+            )}
+            <ImportCodeDialog
+                open={importReplayOpen}
+                title="Import a replay code"
+                label="Paste a replay share code here…"
+                onImport={code => {
+                    const replay = decodeReplayCode(code);
+                    setReplays(saveReplay(replay));
+                }}
+                onClose={() => setImportReplayOpen(false)}
+            />
         </Box>
     );
 };

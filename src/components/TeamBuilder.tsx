@@ -24,6 +24,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import IosShareIcon from '@mui/icons-material/IosShare';
 import AddIcon from '@mui/icons-material/Add';
 import SaveIcon from '@mui/icons-material/Save';
 import SearchIcon from '@mui/icons-material/Search';
@@ -41,6 +42,8 @@ import { applyVitamin, availableHeldItems, getMonProgress, registerMonProgress, 
 import { EV_TOTAL_CAP, IV_STATS, MAX_IV_TOTAL, evTotal, ivTotal, natureLabel } from '../data/natures';
 import type { VitaminId } from '../data/shop';
 import { VITAMINS, VITAMIN_IDS } from '../data/shop';
+import { decodeTeamCode, encodeTeamCode } from '../utils/shareCodes';
+import { ImportCodeDialog, ShareCodeDialog } from './ShareCodeDialog';
 import MoveManagerDialog from './MoveManagerDialog';
 
 interface Props {
@@ -73,6 +76,8 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
     const [suggestionsAnchorEl, setSuggestionsAnchorEl] = useState<null | HTMLElement>(null);
     const [activeSuggestionTeam, setActiveSuggestionTeam] = useState<string | null>(null);
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
+    const [shareCode, setShareCode] = useState<{ title: string; code: string } | null>(null);
+    const [importCodeOpen, setImportCodeOpen] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
     const [editingTeam, setEditingTeam] = useState<Team | null>(null);
     // Drag source: an available Pokémon, or a Box entry (boxIndex set)
@@ -412,6 +417,13 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                             onChange={handleImportTeams}
                         />
                     </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<IosShareIcon />}
+                        onClick={() => setImportCodeOpen(true)}
+                    >
+                        Import Code
+                    </Button>
                 </Box>
             </Box>
 
@@ -445,6 +457,15 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                                                         }}
                                                     >
                                                         <TipsAndUpdatesIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Copy team share code">
+                                                    <IconButton
+                                                        size="small"
+                                                        disabled={team.pokemon.length === 0}
+                                                        onClick={() => setShareCode({ title: `Share "${team.name}"`, code: encodeTeamCode(team) })}
+                                                    >
+                                                        <IosShareIcon fontSize="small" />
                                                     </IconButton>
                                                 </Tooltip>
                                                 <Tooltip title="Rename team">
@@ -979,6 +1000,26 @@ const TeamBuilder: React.FC<Props> = ({ pokemons, getTypeColor, teams, onTeamsCh
                     );
                 })}
             </Menu>
+
+            {/* Share code dialogs */}
+            {shareCode && (
+                <ShareCodeDialog
+                    open
+                    title={shareCode.title}
+                    code={shareCode.code}
+                    onClose={() => setShareCode(null)}
+                />
+            )}
+            <ImportCodeDialog
+                open={importCodeOpen}
+                title="Import a team code"
+                label="Paste a team share code here…"
+                onImport={code => {
+                    const team = decodeTeamCode(code);
+                    onTeamsChange([...teams, { ...team, id: crypto.randomUUID(), name: `${team.name} (shared)` }]);
+                }}
+                onClose={() => setImportCodeOpen(false)}
+            />
 
             {/* Moveset manager */}
             {movesFor && (
